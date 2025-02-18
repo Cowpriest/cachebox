@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'chat_screen.dart'; // Navigate here after login
+import 'create_account_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -55,7 +56,27 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Text('Login'),
             ),
             if (errorMessage != null)
-              Text(errorMessage!, style: TextStyle(color: Colors.red)),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text(errorMessage!, style: TextStyle(color: Colors.red)),
+              ),
+            SizedBox(height: 20),
+            // Create Account Button
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text("Don't have an account? "),
+                TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => CreateAccountScreen()),
+                    );
+                  },
+                  child: Text("Create Account"),
+                ),
+              ],
+            ),
           ],
         ),
       ),
