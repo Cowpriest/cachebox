@@ -39,10 +39,10 @@ class MyApp extends StatelessWidget {
           secondary: Color(0xFFEF8275), // Theme 2 color
           background: Color(0xFF000000),
           surface: Color(0xFF000000),
-          onPrimary: Colors.white,
-          onSecondary: Colors.white,
-          onBackground: Colors.white,
-          onSurface: Colors.white,
+          onPrimary: Color.fromARGB(255, 245, 132, 132),
+          onSecondary: Color.fromARGB(255, 245, 132, 132),
+          onBackground: Color.fromARGB(255, 245, 132, 132),
+          onSurface: Color.fromARGB(255, 245, 132, 132),
         ),
       ),
       home: LoginScreen(), // Initial screen for authentication
