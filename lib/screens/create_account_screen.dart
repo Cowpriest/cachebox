@@ -42,7 +42,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Create Account")),
+      appBar: AppBar(title: Text("CacheBox")),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
