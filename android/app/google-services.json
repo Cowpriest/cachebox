@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "763586150584",
+    "project_id": "cachebox",
+    "storage_bucket": "cachebox.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:763586150584:android:dabe44985fa2b0c5d3744d",
+        "android_client_info": {
+          "package_name": "com.example.cachebox"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDiV8WyJzJtnLsTSUGCfG9qcd1ZecYFGGo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
