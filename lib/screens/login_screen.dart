@@ -44,6 +44,11 @@ class _LoginScreenState extends State<LoginScreen> {
             TextField(
               controller: _emailController,
               decoration: InputDecoration(labelText: 'Email'),
+              // Override the context menu to show nothing
+              contextMenuBuilder:
+                  (BuildContext context, EditableTextState editableTextState) {
+                return const SizedBox.shrink();
+              },
             ),
             TextField(
               controller: _passwordController,
