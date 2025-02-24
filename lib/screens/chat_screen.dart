@@ -33,7 +33,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false, // Removes the default back button
-        title: Text('CacheBox'),
+        title: Text('CacheBox | ${FirebaseAuth.instance.currentUser?.email}'),
         actions: [
           IconButton(
             icon: Icon(Icons.logout),

@@ -1,7 +1,7 @@
 // lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'chat_screen.dart'; // Navigate here after login
+import 'home_screen.dart'; // Navigate here after login
 import 'create_account_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -23,7 +23,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => ChatScreen()),
+        MaterialPageRoute(builder: (_) => HomeScreen()),
       );
     } catch (e) {
       setState(() {
@@ -58,7 +58,10 @@ class _LoginScreenState extends State<LoginScreen> {
             SizedBox(height: 20),
             ElevatedButton(
               onPressed: signIn,
-              child: Text('Login'),
+              child: Text(
+                'Login',
+                style: TextStyle(color: Colors.blue),
+              ),
             ),
             if (errorMessage != null)
               Padding(
