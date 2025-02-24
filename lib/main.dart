@@ -1,9 +1,12 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
-import 'screens/login_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'firebase_options.dart';
+import 'screens/home_screen.dart';
+import 'screens/login_screen.dart';
+import 'screens/chat_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -11,12 +14,18 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Activate App Check with the debug provider for development
+  // Initialize Firebase App Check  debug only
   await FirebaseAppCheck.instance.activate(
-    androidProvider: AndroidProvider.debug,
-    // If you target iOS as well, you can include:
-    // appleProvider: AppleProvider.debug,
+    //webRecaptchaSiteKey: 'your-public-site-key', // Required for web only
+    androidProvider: AndroidProvider.debug, // Use debug for now
   );
+
+  // Initialize Firebase App Check production only
+  // await FirebaseAppCheck.instance.activate(
+  //   androidProvider: AndroidProvider.playIntegrity,
+  //   appleProvider: AppleProvider.deviceCheck,
+  //   webRecaptchaSiteKey: 'your-public-site-key',
+  // );
 
   runApp(MyApp());
 }
@@ -26,26 +35,31 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Cache Box',
-      // Define your custom theme
       theme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: Color(0xFF000000), // Background color
-        primaryColor: Color(0xFF5F0707), // Theme 1 color
-        appBarTheme: AppBarTheme(
-          backgroundColor: Color(0xFF5F0707),
-        ),
-        colorScheme: ColorScheme.dark(
-          primary: Color(0xFF5F0707), // Theme 1 color
-          secondary: Color(0xFFEF8275), // Theme 2 color
-          background: Color(0xFF000000),
-          surface: Color(0xFF000000),
-          onPrimary: Color.fromARGB(255, 245, 132, 132),
-          onSecondary: Color.fromARGB(255, 245, 132, 132),
-          onBackground: Color.fromARGB(255, 245, 132, 132),
-          onSurface: Color.fromARGB(255, 245, 132, 132),
-        ),
+        // your theme settings here...
       ),
-      home: LoginScreen(), // Initial screen for authentication
+      home: AuthWrapper(),
+    );
+  }
+}
+
+class AuthWrapper extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.active) {
+          final User? user = snapshot.data;
+          // If the user is signed in, show the ChatScreen; otherwise, show LoginScreen
+          return user == null ? LoginScreen() : HomeScreen();
+        }
+        // Loading indicator while checking auth state
+        return Scaffold(
+          body: Center(child: CircularProgressIndicator()),
+        );
+      },
     );
   }
 }
