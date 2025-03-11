@@ -36,29 +36,28 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
       print("📏 File Size: ${file.size} bytes");
 
       // If fileBytes is null, try reading from file path (for physical devices)
-      if (fileBytes == null && filePath != null) {
-        try {
-          print("🔍 Attempting to read bytes from file path...");
-          fileBytes = await File(filePath).readAsBytes();
-          print("✅ File bytes successfully read (${fileBytes.length} bytes)");
-        } catch (e) {
-          print("❌ Error reading file bytes: $e");
+      if (fileBytes == null) {
+        if (filePath != null) {
+          try {
+            print("🔍 Attempting to read bytes from file path...");
+            fileBytes = await File(filePath).readAsBytes();
+            print("✅ File bytes successfully read (${fileBytes.length} bytes)");
+          } catch (e) {
+            print("❌ Error reading file bytes: $e");
+            setState(() {
+              _uploadStatus = "Error reading file.";
+              _uploading = false;
+            });
+            return;
+          }
+        } else {
+          print("❌ File path is null. Cannot read file bytes.");
           setState(() {
-            _uploadStatus = "Error reading file.";
+            _uploadStatus = "File path is null.";
             _uploading = false;
           });
           return;
         }
-      }
-
-      // Ensure fileBytes are available before proceeding
-      if (fileBytes == null) {
-        print("🚨 ERROR: fileBytes is still null. Upload aborted.");
-        setState(() {
-          _uploadStatus = "File reading failed.";
-          _uploading = false;
-        });
-        return;
       }
 
       // Set Firebase Storage reference
