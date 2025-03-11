@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cachebox/screens/login_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
 
 class ChatScreen extends StatefulWidget {
   @override
@@ -62,17 +63,155 @@ class _ChatScreenState extends State<ChatScreen> {
                   itemCount: docs.length,
                   itemBuilder: (context, index) {
                     final data = docs[index].data() as Map<String, dynamic>;
-                    // Display the message text along with the user's display name.
-                    return ListTile(
-                      title: Text(data['displayName'] ?? 'Anonymous'),
-                      subtitle: Text(data['text'] ?? ''),
-                      trailing: data['timestamp'] != null
-                          ? Text(data['timestamp']
-                              .toDate()
-                              .toLocal()
-                              .toString()
-                              .substring(0, 16))
-                          : null,
+                    final isMe = data['displayName'] ==
+                        FirebaseAuth.instance.currentUser?.displayName;
+
+                    // Format the timestamp if available
+                    String formattedTimestamp = '';
+                    if (data['timestamp'] != null) {
+                      DateTime timestamp =
+                          (data['timestamp'] as Timestamp).toDate();
+                      String formattedTime =
+                          DateFormat('hh:mm a').format(timestamp);
+                      String formattedDate =
+                          DateFormat('MM-dd-yy').format(timestamp);
+                      formattedTimestamp = '$formattedTime $formattedDate';
+                    }
+
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 4, horizontal: 8),
+                      child: Column(
+                        crossAxisAlignment: isMe
+                            ? CrossAxisAlignment.end
+                            : CrossAxisAlignment.start,
+                        children: [
+                          // Wrap the bubble in a Stack so we can overlay the display name
+                          Stack(
+                            clipBehavior: Clip
+                                .none, // allows the Positioned widget to overflow
+                            children: [
+                              ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth:
+                                      MediaQuery.of(context).size.width * 2 / 3,
+                                ),
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: isMe
+                                        ? const Color.fromARGB(255, 52, 52, 52)
+                                        : const Color.fromARGB(
+                                            255, 16, 90, 201),
+                                    borderRadius: BorderRadius.only(
+                                      topLeft: const Radius.circular(12),
+                                      topRight: const Radius.circular(12),
+                                      bottomLeft: isMe
+                                          ? const Radius.circular(12)
+                                          : const Radius.circular(0),
+                                      bottomRight: isMe
+                                          ? const Radius.circular(0)
+                                          : const Radius.circular(12),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      // The main message text
+                                      Text(
+                                        data['text'] ?? '',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          shadows: [
+                                            Shadow(
+                                                offset: Offset(-1, -1),
+                                                blurRadius: 2,
+                                                color: Colors.black),
+                                            Shadow(
+                                                offset: Offset(1, -1),
+                                                blurRadius: 2,
+                                                color: Colors.black),
+                                            Shadow(
+                                                offset: Offset(1, 1),
+                                                blurRadius: 2,
+                                                color: Colors.black),
+                                            Shadow(
+                                                offset: Offset(-1, 1),
+                                                blurRadius: 2,
+                                                color: Colors.black),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      // Timestamp at the bottom-right
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.end,
+                                        children: [
+                                          Text(
+                                            formattedTimestamp,
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: const Color.fromARGB(
+                                                  118, 0, 0, 0),
+                                              shadows: [
+                                                Shadow(
+                                                    offset: Offset(0.6, 0.6),
+                                                    blurRadius: 1,
+                                                    color: Colors.black),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              // Overlay the display name for non-logged-in messages
+                              if (!isMe)
+                                Positioned(
+                                  top:
+                                      -12, // Adjust this value to control vertical overlap
+                                  left:
+                                      0, // Adjust this value to control horizontal position
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 4, vertical: 2),
+                                    color: Colors.transparent,
+                                    child: Text(
+                                      data['displayName'] ?? '',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        color: Colors.white,
+                                        shadows: [
+                                          Shadow(
+                                              offset: Offset(-1, -1),
+                                              blurRadius: 2,
+                                              color: Colors.black),
+                                          Shadow(
+                                              offset: Offset(1, -1),
+                                              blurRadius: 2,
+                                              color: Colors.black),
+                                          Shadow(
+                                              offset: Offset(1, 1),
+                                              blurRadius: 2,
+                                              color: Colors.black),
+                                          Shadow(
+                                              offset: Offset(-1, 1),
+                                              blurRadius: 2,
+                                              color: Colors.black),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
                     );
                   },
                 );
