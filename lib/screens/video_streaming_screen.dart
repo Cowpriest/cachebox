@@ -19,7 +19,9 @@ class _VideoStreamingScreenState extends State<VideoStreamingScreen> {
     super.initState();
     _controller = VideoPlayerController.network(widget.videoUrl)
       ..initialize().then((_) {
-        setState(() {}); // Refresh the UI after initialization
+        // Once the video is initialized, start playing automatically.
+        _controller.play();
+        setState(() {}); // Refresh the UI after initialization.
       });
   }
 
@@ -35,23 +37,21 @@ class _VideoStreamingScreenState extends State<VideoStreamingScreen> {
       appBar: AppBar(title: Text("Stream Video")),
       body: Center(
         child: _controller.value.isInitialized
-            ? AspectRatio(
-                aspectRatio: _controller.value.aspectRatio,
-                child: VideoPlayer(_controller),
+            ? GestureDetector(
+                onTap: () {
+                  setState(() {
+                    // Toggle play/pause when the video is tapped.
+                    _controller.value.isPlaying
+                        ? _controller.pause()
+                        : _controller.play();
+                  });
+                },
+                child: AspectRatio(
+                  aspectRatio: _controller.value.aspectRatio,
+                  child: VideoPlayer(_controller),
+                ),
               )
             : CircularProgressIndicator(),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          setState(() {
-            _controller.value.isPlaying
-                ? _controller.pause()
-                : _controller.play();
-          });
-        },
-        child: Icon(
-          _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
-        ),
       ),
     );
   }
