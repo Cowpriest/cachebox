@@ -19,12 +19,13 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
   String? _uploadStatus;
   double _uploadProgress = 0.0;
 
-  Future<void> _pickAndUploadFile() async {
+Future<void> _pickAndUploadFile() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles();
     if (result != null) {
       setState(() {
         _uploading = true;
         _uploadStatus = "Uploading...";
+        _uploadProgress = 0.0; // Reset progress
       });
 
       final file = result.files.single;
@@ -68,21 +69,26 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
       try {
         final UploadTask uploadTask = storageRef.putData(fileBytes);
 
+        // Listen to snapshot events and update _uploadProgress.
         uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
           double progress = snapshot.bytesTransferred / snapshot.totalBytes;
           print('📈 Upload progress: ${(progress * 100).toStringAsFixed(0)}%');
+          setState(() {
+            _uploadProgress = progress;
+          });
         });
 
+        // Wait for the upload to complete
         await uploadTask;
-        print('✅ Upload completed successfully for ${file.name}');
 
+        // Once the file is uploaded, retrieve its download URL
         final downloadUrl = await storageRef.getDownloadURL();
         print('🔗 Download URL: $downloadUrl');
 
         // Save metadata to Firestore
         await FirebaseFirestore.instance.collection('shared_files').add({
           'fileName': file.name,
-          'fileUrl': downloadUrl, // Store the correct URL
+          'fileUrl': downloadUrl,
           'uploadedAt': FieldValue.serverTimestamp(),
           'uploadedBy': FirebaseAuth.instance.currentUser?.email ?? "Unknown",
           'fileSize': file.size,
@@ -92,14 +98,12 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
 
         setState(() {
           _uploadStatus = "Upload successful!";
+          _uploading = false;
         });
       } catch (e) {
         print("❌ Upload failed: $e");
         setState(() {
           _uploadStatus = "Upload failed: $e";
-        });
-      } finally {
-        setState(() {
           _uploading = false;
         });
       }
@@ -107,6 +111,7 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
       print("⚠ No file selected.");
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
