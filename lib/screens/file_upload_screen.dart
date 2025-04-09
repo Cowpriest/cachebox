@@ -90,7 +90,8 @@ Future<void> _pickAndUploadFile() async {
           'fileName': file.name,
           'fileUrl': downloadUrl,
           'uploadedAt': FieldValue.serverTimestamp(),
-          'uploadedBy': FirebaseAuth.instance.currentUser?.email ?? "Unknown",
+          'uploadedBy':
+              FirebaseAuth.instance.currentUser?.displayName ?? "Unknown",
           'fileSize': file.size,
         });
 

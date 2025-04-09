@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'file_upload_screen.dart'; // Import your file upload screen
+import 'file_upload_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cachebox/screens/video_streaming_screen.dart';
 import 'package:cachebox/screens/file_viewer_screen.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:intl/intl.dart';
 
 void _launchURL(String url) async {
   Uri uri = Uri.parse(url);
@@ -94,15 +95,12 @@ return ListView.builder(
     
               return Slidable(
                 key: Key(docs[index].id),
-                // Define the action pane that appears from the right side
                 endActionPane: ActionPane(
                   motion: const DrawerMotion(),
-                  extentRatio:
-                      0.25, // Adjust this to control how much of the tile is revealed
+                  extentRatio: 0.25,
                   children: [
                     SlidableAction(
                       onPressed: (context) async {
-                        // Call your delete function here. Make sure deleteFile is defined.
                         await deleteFile(docs[index].id, data['fileName']);
                       },
                       backgroundColor: Colors.red,
@@ -112,14 +110,26 @@ return ListView.builder(
                     ),
                   ],
                 ),
-                // The main tile displays your file metadata and a "View" button
                 child: ListTile(
                   title: Text(data['fileName'] ?? 'Unnamed file'),
-                  subtitle: Text(
-                    data['uploadedAt'] != null
-                        ? (data['uploadedAt'] as Timestamp).toDate().toString()
-                        : 'No date',
-                  ),
+                  subtitle: data['uploadedAt'] != null
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Format the timestamp using DateFormat for a 12-hour format
+                            Text(
+                              '${DateFormat('hh:mm a').format((data['uploadedAt'] as Timestamp).toDate())}  ${DateFormat('MM-dd-yy').format((data['uploadedAt'] as Timestamp).toDate())}',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            // Display the uploader's name
+                            Text(
+                              'Uploaded by: ${data['uploadedBy'] ?? 'Unknown'}',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ],
+                        )
+                      : Text('No date'),
                   trailing: TextButton(
                     child: const Text("View"),
                     onPressed: () {
@@ -138,7 +148,6 @@ return ListView.builder(
                       }
                     },
                   ),
-
                 ),
               );
             },

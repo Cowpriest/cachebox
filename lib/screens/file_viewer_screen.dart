@@ -57,7 +57,7 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
     final lowerName = widget.fileName.toLowerCase();
 
     // Video file: use your VideoStreamingScreen
-    if (lowerName.endsWith('.mp4')) {
+    if (lowerName.endsWith('.mp4') || lowerName.endsWith('.mp3')) {
       return VideoStreamingScreen(videoUrl: widget.fileUrl);
 
       // Image file: display with Image.network
