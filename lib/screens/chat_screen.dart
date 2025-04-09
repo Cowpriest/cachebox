@@ -4,6 +4,7 @@ import 'package:cachebox/screens/login_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class ChatScreen extends StatefulWidget {
   @override
@@ -39,7 +40,9 @@ class _ChatScreenState extends State<ChatScreen> {
           IconButton(
             icon: Icon(Icons.logout),
             onPressed: () async {
-              await FirebaseAuth.instance.signOut();
+              await FirebaseAuth.instance
+                  .signOut(); // this is old method, remove once google sign-in works
+              await GoogleSignIn().signOut();
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(builder: (_) => LoginScreen()),
