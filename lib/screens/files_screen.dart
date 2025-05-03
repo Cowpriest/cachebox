@@ -1,160 +1,97 @@
+// lib/screens/files_screen.dart
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'file_upload_screen.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:cachebox/screens/video_streaming_screen.dart';
-import 'package:cachebox/screens/file_viewer_screen.dart';
+import 'package:cachebox/services/jellyfin_service.dart'; // Import the service
+import 'package:cachebox/screens/video_player_screen.dart';
+import 'package:cachebox/screens/audio_streaming_screen.dart';
+import 'package:cachebox/screens/pdf_from_network_page.dart';
+import 'package:cachebox/screens/file_viewer_screen.dart'; // For fallback viewing
 import 'package:flutter_slidable/flutter_slidable.dart';
-import 'package:intl/intl.dart';
 
-void _launchURL(String url) async {
-  Uri uri = Uri.parse(url);
-  if (await canLaunchUrl(uri)) {
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+class FilesScreen extends StatefulWidget {
+  final String? parentId;
+
+  const FilesScreen({Key? key, this.parentId}) : super(key: key);
+
+  @override
+  State<FilesScreen> createState() => _FilesScreenState();
+}
+
+class _FilesScreenState extends State<FilesScreen> {
+  late Future<List<JellyfinItem>> _futureItems;
+
+  @override
+  void initState() {
+    super.initState();
+    _futureItems = JellyfinService().fetchItems(parentId: widget.parentId);
+  }
+
+void _openItem(JellyfinItem item) {
+  if (item.isFolder) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FilesScreen(parentId: item.id),
+      ),
+    );
   } else {
-    print("❌ Could not launch URL: $url");
+    print('🎬 Tapped on movie: ${item.name} (ID: ${item.id})');
+    final streamUrl = JellyfinService().getStreamUrl(item.id);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => VideoPlayerScreen(
+          streamUrl: streamUrl,
+          title: item.name,
+        ),
+      ),
+    );
   }
 }
 
-Future<void> deleteFile(String docId, String fileName) async {
-  try {
-    // Reference the file in Firebase Storage.
-    final storageRef =
-        FirebaseStorage.instance.ref().child('shared_files/$fileName');
-    await storageRef.delete(); // Delete the file from Storage.
-
-    // Now delete the metadata from Firestore.
-    await FirebaseFirestore.instance
-        .collection('shared_files')
-        .doc(docId)
-        .delete();
-
-    print('File and metadata deleted successfully.');
-  } catch (e) {
-    print('Error deleting file: $e');
-  }
-}
-
-
-class FilesScreen extends StatelessWidget {
-  const FilesScreen({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Shared Files'),
+        title: const Text('Shared Media'),
         backgroundColor: const Color(0xFF5F0707),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.upload_file),
-            onPressed: () {
-              // Navigate to the file upload screen when pressed
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const FileUploadScreen()),
-              );
-            },
-          ),
-        ],
+        automaticallyImplyLeading: false, // 🚫 No back button
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection(
-                'shared_files') // Ensure this collection name matches Firebase
-            .orderBy('uploadedAt', descending: true)
-            .snapshots(),
+      body: FutureBuilder<List<JellyfinItem>>(
+        future: _futureItems,
         builder: (context, snapshot) {
-          print("🔍 Checking Firestore snapshot for files...");
-
-          if (snapshot.hasError) {
-            print("❌ Firestore Error: ${snapshot.error}");
-            return Center(child: Text("Error loading files"));
-          }
-
           if (snapshot.connectionState == ConnectionState.waiting) {
-            print("⏳ Firestore is still loading...");
-            return Center(child: CircularProgressIndicator());
-          }
-
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            print("📭 No files found in Firestore!");
-            return Center(child: Text("No files uploaded yet."));
-          }
-
-          print("✅ Files loaded successfully!");
-          final docs = snapshot.data!.docs;
-
-return ListView.builder(
-            itemCount: docs.length,
-            itemBuilder: (context, index) {
-              final data = docs[index].data() as Map<String, dynamic>;
-              print(
-                  "📂 File: ${data['fileName']} uploaded by ${data['uploadedBy']}");
-    
-              return Slidable(
-                key: Key(docs[index].id),
-                endActionPane: ActionPane(
-                  motion: const DrawerMotion(),
-                  extentRatio: 0.25,
-                  children: [
-                    SlidableAction(
-                      onPressed: (context) async {
-                        await deleteFile(docs[index].id, data['fileName']);
-                      },
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                      icon: Icons.delete,
-                      label: 'Delete',
-                    ),
-                  ],
-                ),
-                child: ListTile(
-                  title: Text(data['fileName'] ?? 'Unnamed file'),
-                  subtitle: data['uploadedAt'] != null
-                      ? Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // Format the timestamp using DateFormat for a 12-hour format
-                            Text(
-                              '${DateFormat('hh:mm a').format((data['uploadedAt'] as Timestamp).toDate())}  ${DateFormat('MM-dd-yy').format((data['uploadedAt'] as Timestamp).toDate())}',
-                              style: TextStyle(fontSize: 12),
-                            ),
-                            // Display the uploader's name
-                            Text(
-                              'Uploaded by: ${data['uploadedBy'] ?? 'Unknown'}',
-                              style: TextStyle(fontSize: 12),
-                            ),
-                          ],
-                        )
-                      : Text('No date'),
+            return const Center(child: CircularProgressIndicator());
+          } else if (snapshot.hasError) {
+            return Center(
+                child: Text('Failed to load files: ${snapshot.error}'));
+          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text('No shared media found.'));
+          } else {
+            final items = snapshot.data!;
+            return ListView.builder(
+              itemCount: items.length,
+              itemBuilder: (context, index) {
+                final item = items[index];
+                return ListTile(
+                  leading: Icon(
+                    item.isFolder ? Icons.folder : Icons.movie,
+                    color: item.isFolder ? Colors.amber : Colors.blueAccent,
+                  ),
+                  title: Text(item.name),
+                  subtitle: Text(item.type),
                   trailing: TextButton(
-                    child: const Text("View"),
+                    child: Text(item.isFolder ? 'Open' : 'View'),
                     onPressed: () {
-                      if (data['fileUrl'] != null) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => FileViewerScreen(
-                              fileUrl: data['fileUrl'],
-                              fileName: data['fileName'],
-                            ),
-                          ),
-                        );
-                      } else {
-                        print("❌ No file URL found for ${data['fileName']}");
-                      }
+                      _openItem(item);
                     },
                   ),
-                ),
-              );
-            },
-          );
-
+                );
+              },
+            );
+          }
         },
       ),
-    ); // ✅ Only one closing parenthesis here
+    );
   }
 }

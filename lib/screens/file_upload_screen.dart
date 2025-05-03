@@ -8,7 +8,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class FileUploadScreen extends StatefulWidget {
-  const FileUploadScreen({Key? key}) : super(key: key);
+  final String groupId;
+  const FileUploadScreen({Key? key, required this.groupId}) : super(key: key);
 
   @override
   _FileUploadScreenState createState() => _FileUploadScreenState();
@@ -19,7 +20,7 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
   String? _uploadStatus;
   double _uploadProgress = 0.0;
 
-Future<void> _pickAndUploadFile() async {
+  Future<void> _pickAndUploadFile() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles();
     if (result != null) {
       setState(() {
@@ -62,8 +63,9 @@ Future<void> _pickAndUploadFile() async {
       }
 
       // Set Firebase Storage reference
-      final storageRef =
-          FirebaseStorage.instance.ref().child('shared_files/${file.name}');
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('groups/${widget.groupId}/files/${file.name}');
       print("🚀 Attempting to upload to: ${storageRef.fullPath}");
 
       try {
@@ -86,7 +88,12 @@ Future<void> _pickAndUploadFile() async {
         print('🔗 Download URL: $downloadUrl');
 
         // Save metadata to Firestore
-        await FirebaseFirestore.instance.collection('shared_files').add({
+        // Save metadata to the group’s files subcollection
+        await FirebaseFirestore.instance
+            .collection('groups')
+            .doc(widget.groupId)
+            .collection('files')
+            .add({
           'fileName': file.name,
           'fileUrl': downloadUrl,
           'uploadedAt': FieldValue.serverTimestamp(),
@@ -112,7 +119,6 @@ Future<void> _pickAndUploadFile() async {
       print("⚠ No file selected.");
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
