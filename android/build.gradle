@@ -1,3 +1,18 @@
+buildscript {
+    ext {
+        kotlin_version = '2.1.0' // Override for Flutter plugins
+    }
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath "com.android.tools.build:gradle:8.2.2"  // Make sure this supports Kotlin 2.1
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0"
+        classpath "com.google.gms:google-services:4.3.15"
+    }
+}
 allprojects {
     repositories {
         google()

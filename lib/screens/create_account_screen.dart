@@ -1,7 +1,7 @@
 // lib/screens/create_account_screen.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'home_screen.dart';
+import 'group_list_screen.dart';
 
 class CreateAccountScreen extends StatefulWidget {
   @override
@@ -28,9 +28,13 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
       );
       // Optionally, reload the user to ensure updated profile is reflected:
       await userCredential.user?.reload();
+      // Navigator.pushReplacement(
+      //   context,
+      //   MaterialPageRoute(builder: (_) => HomeScreen()),
+      // );
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => HomeScreen()),
+        MaterialPageRoute(builder: (_) => GroupListScreen()),
       );
     } catch (e) {
       setState(() {

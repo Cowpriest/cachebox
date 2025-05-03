@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /groups/{groupId} {
+      allow create: if request.auth != null;
+
+      // Allow fetching a single group if you’re a member …
+      allow get: if request.auth != null
+                 && request.auth.uid in resource.data.members;
+
+      // … or allow listing groups only when the query includes inviteCode == some string
+      allow list: if request.auth != null
+                  && request.query.where('inviteCode', '==', request.query['inviteCode']);
+      
+      allow update: if request.auth != null
+                      && request.auth.uid in resource.data.members;
+      allow delete: if request.auth != null
+                      && resource.data.createdBy == request.auth.uid;
+    }
+
+  }
+}

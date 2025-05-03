@@ -27,6 +27,13 @@ void main() async {
   //   webRecaptchaSiteKey: 'your-public-site-key',
   // );
 
+  // prints debug token.  erase when going to production.
+  FirebaseAppCheck.instance.getToken().then((token) {
+    print('🔥 AppCheck Debug token: $token');
+  }).catchError((e) {
+    print('❌ Failed to get AppCheck token: $e');
+  });
+
   runApp(MyApp());
 }
 

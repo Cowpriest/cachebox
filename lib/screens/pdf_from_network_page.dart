@@ -7,7 +7,9 @@ import 'dart:typed_data';
 class PdfFromNetworkPage extends StatefulWidget {
   final String pdfUrl;
   final String fileName; // For display in the AppBar
-  const PdfFromNetworkPage({Key? key, required this.pdfUrl, required this.fileName}) : super(key: key);
+  const PdfFromNetworkPage(
+      {Key? key, required this.pdfUrl, required this.fileName})
+      : super(key: key);
 
   @override
   _PdfFromNetworkPageState createState() => _PdfFromNetworkPageState();
@@ -51,7 +53,6 @@ class _PdfFromNetworkPageState extends State<PdfFromNetworkPage> {
             final PdfControllerPinch pdfController = PdfControllerPinch(
               document: PdfDocument.openData(
                 snapshot.data!,
-                forPrint: false, // This parameter is now required by pdfx 2.9.0
               ),
             );
             return PdfViewPinch(
