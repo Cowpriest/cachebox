@@ -63,9 +63,9 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
       }
 
       // Set Firebase Storage reference
-      final storageRef = FirebaseStorage.instance
-          .ref()
-          .child('groups/${widget.groupId}/files/${file.name}');
+      final storageRef = FirebaseStorage.instance.ref().child(
+        'groups/${widget.groupId}/files/${file.name}',
+      );
       print("🚀 Attempting to upload to: ${storageRef.fullPath}");
 
       try {
@@ -94,13 +94,16 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
             .doc(widget.groupId)
             .collection('files')
             .add({
-          'fileName': file.name,
-          'fileUrl': downloadUrl,
-          'uploadedAt': FieldValue.serverTimestamp(),
-          'uploadedBy':
-              FirebaseAuth.instance.currentUser?.displayName ?? "Unknown",
-          'fileSize': file.size,
-        });
+              'fileName': file.name,
+              'fileUrl': downloadUrl,
+              'uploadedAt': FieldValue.serverTimestamp(),
+              // who clicked “upload”:
+              'uploadedByName':
+                  FirebaseAuth.instance.currentUser?.displayName ?? "Unknown",
+              'uploadedByUid': FirebaseAuth.instance.currentUser!.uid,
+              'storagePath': storageRef.fullPath,
+              'fileSize': file.size,
+            });
 
         print("✅ File metadata saved to Firestore: ${file.name}");
 
@@ -134,9 +137,7 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
             if (_uploading)
               Column(
                 children: [
-                  CircularProgressIndicator(
-                    value: _uploadProgress,
-                  ),
+                  CircularProgressIndicator(value: _uploadProgress),
                   SizedBox(height: 8),
                   Text('${(_uploadProgress * 100).toStringAsFixed(0)}%'),
                 ],

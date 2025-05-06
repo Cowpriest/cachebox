@@ -1,64 +1,51 @@
 import 'package:flutter/material.dart';
-import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
+import 'package:video_player/video_player.dart';
 
 class VideoPlayerScreen extends StatefulWidget {
-  final String streamUrl;
-  final String title;
-
-  const VideoPlayerScreen({
-    Key? key,
-    required this.streamUrl,
-    required this.title,
-  }) : super(key: key);
+  final String videoUrl;
+  const VideoPlayerScreen({required this.videoUrl});
 
   @override
   State<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
 }
 
 class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
-  late VideoPlayerController _videoPlayerController;
+  late VideoPlayerController _videoController;
   ChewieController? _chewieController;
 
-@override
-void initState() {
-  super.initState();
-
-  _videoPlayerController = VideoPlayerController.network(widget.streamUrl)
-    ..initialize().then((_) async {
-      await Future.delayed(const Duration(milliseconds: 500)); // 👈 small delay
-      _chewieController = ChewieController(
-        videoPlayerController: _videoPlayerController,
-        autoPlay: true,
-        looping: false,
-        showControlsOnInitialize: true,
-        allowFullScreen: true,
-        allowPlaybackSpeedChanging: true,
-      );
-
-      setState(() {});
-    });
-}
+  @override
+  void initState() {
+    super.initState();
+    _videoController = VideoPlayerController.network(widget.videoUrl)
+      ..initialize().then((_) {
+        setState(() {
+          _chewieController = ChewieController(
+            videoPlayerController: _videoController,
+            autoPlay: true,
+            looping: false,
+            showControls: true,
+          );
+        });
+      });
+  }
 
   @override
   void dispose() {
+    _videoController.dispose();
     _chewieController?.dispose();
-    _videoPlayerController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title),
-        backgroundColor: const Color(0xFF5F0707),
-      ),
+      appBar: AppBar(title: Text('Video')),
       body: Center(
         child: _chewieController != null &&
                 _chewieController!.videoPlayerController.value.isInitialized
             ? Chewie(controller: _chewieController!)
-            : const CircularProgressIndicator(),
+            : CircularProgressIndicator(),
       ),
     );
   }

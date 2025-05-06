@@ -1,3 +1,5 @@
+// lib/screens/group_list_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,8 +9,51 @@ import 'create_group_screen.dart';
 import 'join_group_screen.dart';
 import 'group_home_screen.dart';
 
-class GroupListScreen extends StatelessWidget {
+class GroupListScreen extends StatefulWidget {
   const GroupListScreen({Key? key}) : super(key: key);
+
+  @override
+  _GroupListScreenState createState() => _GroupListScreenState();
+}
+
+class _GroupListScreenState extends State<GroupListScreen> {
+  @override
+  void initState() {
+    super.initState();
+    debugGroupQuery();
+
+    FirebaseFirestore.instance
+        .collection('__debug')
+        .doc('ping')
+        .set({'ts': FieldValue.serverTimestamp()})
+        .then((_) => print('🔄 PING succeeded'))
+        .catchError((e) => print('⚠️ PING failed: $e'));
+  }
+
+  /// Prints exactly what Firestore sees, and logs any permission error
+  Future<void> debugGroupQuery() async {
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+    final ref = FirebaseFirestore.instance.collection('groups');
+
+    print('🚧 DEBUG: about to run query:'
+        ' .where("members", arrayContains: $uid)'
+        ' .orderBy(FieldPath.documentId)'
+        ' .limit(1)');
+
+    try {
+      final snap = await ref
+          .where('members', arrayContains: uid)
+          .orderBy(FieldPath.documentId)
+          .limit(1)
+          .get();
+      print('✅ DEBUG: query succeeded, docs returned=${snap.docs.length}');
+    } on FirebaseException catch (e) {
+      print('❌ DEBUG: FirebaseException.code = ${e.code}');
+      print('❌ DEBUG: FirebaseException.message = ${e.message}');
+    } catch (e) {
+      print('❌ DEBUG: unknown error: $e');
+    }
+  }
 
   Future<void> _signOut(BuildContext ctx) async {
     await FirebaseAuth.instance.signOut();
@@ -22,6 +67,7 @@ class GroupListScreen extends StatelessWidget {
   @override
   Widget build(BuildContext ctx) {
     final uid = FirebaseAuth.instance.currentUser!.uid;
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Your Groups'),
@@ -37,6 +83,7 @@ class GroupListScreen extends StatelessWidget {
         stream: FirebaseFirestore.instance
             .collection('groups')
             .where('members', arrayContains: uid)
+            .orderBy(FieldPath.documentId)
             .snapshots(),
         builder: (ctx, snapshot) {
           // 1. Error state
@@ -50,7 +97,7 @@ class GroupListScreen extends StatelessWidget {
           // 3. Data state
           final docs = snapshot.data?.docs ?? [];
           if (docs.isEmpty) {
-            // Empty‑state UI
+            // Empty-state UI
             return Center(
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: 24),
