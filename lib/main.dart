@@ -1,4 +1,5 @@
 // lib/main.dart
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,32 +8,46 @@ import 'firebase_options.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/chat_screen.dart';
+import 'package:just_audio_background/just_audio_background.dart';
+import 'globals.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Initialize Firebase App Check  debug only
+  // optionally, disable caching entirely
+  //FirebaseFirestore.instance.settings =
+  //    const Settings(persistenceEnabled: false);
+
+  // ——— Point Firestore at the local emulator ———
+  // FirebaseFirestore.instance.useFirestoreEmulator('10.0.0.86', 8080);
+  // print('👉 butts Firestore emulator at 10.0.0.86:8080');
+
+  //  send a ping!
+  // await FirebaseFirestore.instance
+  //     .collection('___debug')
+  //     .doc('ping')
+  //     .set({'ts': FieldValue.serverTimestamp()});
+  // print('🔄 sent debug ping');
+
   await FirebaseAppCheck.instance.activate(
-    //webRecaptchaSiteKey: 'your-public-site-key', // Required for web only
-    androidProvider: AndroidProvider.debug, // Use debug for now
+    androidProvider: AndroidProvider.debug,
   );
 
-  // Initialize Firebase App Check production only
-  // await FirebaseAppCheck.instance.activate(
-  //   androidProvider: AndroidProvider.playIntegrity,
-  //   appleProvider: AppleProvider.deviceCheck,
-  //   webRecaptchaSiteKey: 'your-public-site-key',
-  // );
-
-  // prints debug token.  erase when going to production.
   FirebaseAppCheck.instance.getToken().then((token) {
     print('🔥 AppCheck Debug token: $token');
   }).catchError((e) {
     print('❌ Failed to get AppCheck token: $e');
   });
+
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.yourapp.audio', // unique ID
+    androidNotificationChannelName: 'Audio playback', // visible name
+    androidNotificationOngoing: true, // make it sticky
+  );
 
   runApp(MyApp());
 }

@@ -15,8 +15,12 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   String _makeCode(int len) {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     final rnd = Random();
-    return String.fromCharCodes(Iterable.generate(
-        len, (_) => chars.codeUnitAt(rnd.nextInt(chars.length))));
+    return String.fromCharCodes(
+      Iterable.generate(
+        len,
+        (_) => chars.codeUnitAt(rnd.nextInt(chars.length)),
+      ),
+    );
   }
 
   Future<void> _create() async {
@@ -26,21 +30,26 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     await FirebaseFirestore.instance.collection('groups').add({
       'name': _nameCtrl.text.trim(),
       'inviteCode': code,
-      'createdBy': uid,
-      'createdAt': FieldValue.serverTimestamp(),
+      'ownerUid': uid,
       'members': [uid],
+      'admins': [],
+      'createdAt': FieldValue.serverTimestamp(),
     });
     setState(() => _loading = false);
     showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-              title: Text('Group Created'),
-              content: Text('Invite Code: $code'),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(context), child: Text('OK'))
-              ],
-            ));
+      context: context,
+      builder:
+          (_) => AlertDialog(
+            title: Text('Group Created'),
+            content: Text('Invite Code: $code'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('OK'),
+              ),
+            ],
+          ),
+    );
   }
 
   @override
@@ -52,8 +61,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
         child: Column(
           children: [
             TextField(
-                controller: _nameCtrl,
-                decoration: InputDecoration(labelText: 'Group Name')),
+              controller: _nameCtrl,
+              decoration: InputDecoration(labelText: 'Group Name'),
+            ),
             SizedBox(height: 20),
             _loading
                 ? CircularProgressIndicator()
