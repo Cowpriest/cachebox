@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart'; // for Clipboard
 import 'dart:math';
 
 class CreateGroupScreen extends StatefulWidget {
@@ -26,6 +27,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   Future<void> _create() async {
     setState(() => _loading = true);
     final code = _makeCode(6);
+    Clipboard.setData(ClipboardData(text: code!));
     final uid = FirebaseAuth.instance.currentUser!.uid;
     await FirebaseFirestore.instance.collection('groups').add({
       'name': _nameCtrl.text.trim(),
@@ -38,17 +40,16 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     setState(() => _loading = false);
     showDialog(
       context: context,
-      builder:
-          (_) => AlertDialog(
-            title: Text('Group Created'),
-            content: Text('Invite Code: $code'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text('OK'),
-              ),
-            ],
+      builder: (_) => AlertDialog(
+        title: Text('Group Created'),
+        content: Text('Invite Code: $code'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('OK'),
           ),
+        ],
+      ),
     );
   }
 

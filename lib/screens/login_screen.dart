@@ -1,9 +1,10 @@
 // lib/screens/login_screen.dart
-import 'package:google_sign_in/google_sign_in.dart';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/material.dart';
-import 'group_list_screen.dart'; // Navigate here after login
-// import 'create_account_screen.dart'; // Optionally remove if not needed
+import 'group_list_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -11,36 +12,39 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  // Remove controllers for email and password if they're not needed.
-  // final TextEditingController _emailController = TextEditingController();
-  // final TextEditingController _passwordController = TextEditingController();
   String? errorMessage;
 
   Future<UserCredential> signInWithGoogle() async {
-    final GoogleSignIn googleSignIn = GoogleSignIn();
-    final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+    final googleSignIn = GoogleSignIn();
+    final googleUser = await googleSignIn.signIn();
     if (googleUser == null) {
       throw Exception("Google sign-in aborted");
     }
 
-    final GoogleSignInAuthentication googleAuth =
-        await googleUser.authentication;
+    final googleAuth = await googleUser.authentication;
     final credential = GoogleAuthProvider.credential(
       accessToken: googleAuth.accessToken,
       idToken: googleAuth.idToken,
     );
 
-    // Sign in to Firebase with the Google user credential
-    UserCredential userCredential =
+    // 1) Sign in to Firebase
+    final userCredential =
         await FirebaseAuth.instance.signInWithCredential(credential);
 
-    // If the displayName is missing, update it using the Google account's displayName
-    if (userCredential.user?.displayName == null ||
-        userCredential.user!.displayName!.isEmpty) {
-      await userCredential.user!.updateDisplayName(googleUser.displayName);
-      // Optionally reload the user to ensure the profile is updated immediately
-      await userCredential.user!.reload();
+    final user = userCredential.user!;
+    // 2) Ensure the Firebase User.displayName is set
+    if (user.displayName == null || user.displayName!.isEmpty) {
+      await user.updateDisplayName(googleUser.displayName);
+      await user.reload();
     }
+
+    // 3) Upsert into Firestore `users/{uid}` doc
+    await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      'displayName': user.displayName,
+      'photoURL': user.photoURL,
+      'email': user.email,
+      'lastSignIn': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
 
     return userCredential;
   }
@@ -48,51 +52,33 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('CacheBox')),
+      appBar: AppBar(title: const Text('CacheBox')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Center(
-              child: ElevatedButton.icon(
-                icon: Icon(Icons.login),
-                label: Text('Sign in with Google'),
-                // onPressed: () async {
-                //   try {
-                //     await signInWithGoogle();
-                //     Navigator.pushReplacement(
-                //       context,
-                //       MaterialPageRoute(builder: (_) => return user == null
-                //         ? LoginScreen()
-                //         : GroupListScreen();),
-                //     );
-                //   } catch (e) {
-                //     setState(() {
-                //       errorMessage = "Failed to sign in with Google: $e";
-                //     });
-                //   }
-                // },
-                onPressed: () async {
-                  try {
-                    await signInWithGoogle();
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (_) => GroupListScreen()),
-                    );
-                  } catch (e) {
-                    setState(() {
-                      errorMessage = "Failed to sign in with Google: $e";
-                    });
-                  }
-                },
-              ),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.login),
+              label: const Text('Sign in with Google'),
+              onPressed: () async {
+                try {
+                  await signInWithGoogle();
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (_) => GroupListScreen()),
+                  );
+                } catch (e) {
+                  setState(() {
+                    errorMessage = "Failed to sign in with Google: $e";
+                  });
+                }
+              },
             ),
-            if (errorMessage != null)
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Text(errorMessage!, style: TextStyle(color: Colors.red)),
-              ),
+            if (errorMessage != null) ...[
+              const SizedBox(height: 12),
+              Text(errorMessage!, style: const TextStyle(color: Colors.red)),
+            ],
           ],
         ),
       ),

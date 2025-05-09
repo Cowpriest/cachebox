@@ -1,8 +1,11 @@
 // In your GroupService (lib/services/group_service.dart)
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class GroupService {
-  final CollectionReference _groups = FirebaseFirestore.instance.collection('groups');
+  final CollectionReference _groups =
+      FirebaseFirestore.instance.collection('groups');
 
   Future<void> createGroup(String groupName, String creatorUid) async {
     await _groups.add({
@@ -12,6 +15,6 @@ class GroupService {
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
-  
+
   // Additional functions: joinGroup, getGroupsForUser, etc.
 }

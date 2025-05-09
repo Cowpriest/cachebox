@@ -1,13 +1,15 @@
 // lib/screens/files_screen.dart
 
 import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-import 'package:pdfx/pdfx.dart';
-import 'dart:io';
 import 'package:path_provider/path_provider.dart';
+import 'package:pdfx/pdfx.dart';
 
 import '../services/file_service.dart';
 import '../services/file_model.dart';
@@ -18,11 +20,13 @@ import 'text_viewer_screen.dart';
 
 class FilesScreen extends StatefulWidget {
   final String groupId;
+  final String groupName;
   final String ownerUid;
   final List<String> adminUids;
 
   const FilesScreen({
     required this.groupId,
+    required this.groupName,
     required this.ownerUid,
     required this.adminUids,
     Key? key,
@@ -33,6 +37,7 @@ class FilesScreen extends StatefulWidget {
 }
 
 class _FilesScreenState extends State<FilesScreen> {
+  final _service = FileService();
   List<FileModel> files = [];
   bool loading = false;
 
@@ -46,9 +51,7 @@ class _FilesScreenState extends State<FilesScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(
-        child: CircularProgressIndicator(),
-      ),
+      builder: (_) => const Center(child: CircularProgressIndicator()),
     );
   }
 
@@ -58,27 +61,31 @@ class _FilesScreenState extends State<FilesScreen> {
 
   Future<void> _refresh() async {
     setState(() => loading = true);
-    final groupId = widget.groupId;
-    print('🔄 FilesScreen._refresh for groupId=$groupId');
     try {
-      final fetched = await FileService.listFiles(widget.groupId);
-      print('✅ _refresh succeeded, loaded ${files.length} files');
+      final fetched = await _service.listFiles(widget.groupId, sync: true);
       setState(() => files = fetched);
-    } catch (e, st) {
-      // print to console for full stack
-      debugPrint('❌ listFiles error: $e\n$st');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('❌ Failed to fetch files:\n$e')));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to fetch files: $e')),
+      );
     } finally {
       setState(() => loading = false);
     }
   }
 
   Future<void> _upload() async {
+    // Let the user pick any file
+    final result = await FilePicker.platform.pickFiles();
+    if (result == null || result.files.single.path == null) {
+      return; // user cancelled
+    }
+    final path = result.files.single.path!;
+    final name = result.files.single.name;
+
     _showLoadingDialog();
     try {
-      await FileService.uploadFile(widget.groupId);
+      // fieldName is 'file' to match your multer setup
+      await _service.uploadFile(widget.groupId, path, 'file');
       await _refresh();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -95,27 +102,28 @@ class _FilesScreenState extends State<FilesScreen> {
     final ext = p.extension(file.fileName).toLowerCase();
 
     try {
-      if (['.mp4', '.webm'].contains(ext)) {
+      if (['.mp4', '.webm', '.mkv'].contains(ext)) {
         _hideLoadingDialog();
         Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => VideoPlayerScreen(videoUrl: url)),
-        );
+            context,
+            MaterialPageRoute(
+              builder: (_) => VideoPlayerScreen(videoUrl: url),
+            ));
       } else if (['.mp3', '.wav'].contains(ext)) {
         _hideLoadingDialog();
         Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => AudioPlayerScreen(audioUrl: url)),
-        );
+            context,
+            MaterialPageRoute(
+              builder: (_) => AudioPlayerScreen(audioUrl: url),
+            ));
       } else if (['.jpg', '.jpeg', '.png', '.gif'].contains(ext)) {
         _hideLoadingDialog();
         Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => ImageViewerScreen(imageUrl: url)),
-        );
-      } else if (['.pdf'].contains(ext)) {
-        _hideLoadingDialog();
-        // download to temp, then...
+            context,
+            MaterialPageRoute(
+              builder: (_) => ImageViewerScreen(imageUrl: url),
+            ));
+      } else if (ext == '.pdf') {
         final response = await http.get(Uri.parse(url));
         if (response.statusCode != 200) {
           throw Exception('Failed to download PDF (${response.statusCode})');
@@ -124,42 +132,43 @@ class _FilesScreenState extends State<FilesScreen> {
         final tmpPath = '${tmpDir.path}/${file.fileName}';
         await File(tmpPath).writeAsBytes(response.bodyBytes, flush: true);
 
-        // then navigate to our new PdfViewerScreen:
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => PdfViewerScreen(
-              filePath: tmpPath,
-              fileName: file.fileName,
-            ),
-          ),
-        );
-      } else {
-        // treat everything else as text/code
-        final response = await http.get(Uri.parse(url));
         _hideLoadingDialog();
         Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => TextViewerScreen(
-              textContent: utf8.decode(response.bodyBytes),
-              fileName: file.fileName,
-            ),
-          ),
-        );
+            context,
+            MaterialPageRoute(
+              builder: (_) => PdfViewerScreen(
+                filePath: tmpPath,
+                fileName: file.fileName,
+              ),
+            ));
+      } else {
+        final response = await http.get(Uri.parse(url));
+        if (response.statusCode != 200) {
+          throw Exception('Failed to download file (${response.statusCode})');
+        }
+        final text = utf8.decode(response.bodyBytes);
+        _hideLoadingDialog();
+        Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => TextViewerScreen(
+                textContent: text,
+                fileName: file.fileName,
+              ),
+            ));
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('❌ Failed to load file')));
       _hideLoadingDialog();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Failed to open file: $e')),
+      );
     }
   }
 
   Future<void> _delete(FileModel file) async {
     _showLoadingDialog();
     try {
-      await FileService.deleteFile(widget.groupId, file);
+      await _service.deleteFile(widget.groupId, file);
       await _refresh();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -176,7 +185,8 @@ class _FilesScreenState extends State<FilesScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Group Files'),
+        automaticallyImplyLeading: false,
+        title: Text(widget.groupName),
         actions: [
           IconButton(onPressed: _upload, icon: const Icon(Icons.upload_file)),
         ],
@@ -189,7 +199,6 @@ class _FilesScreenState extends State<FilesScreen> {
                 itemCount: files.length,
                 itemBuilder: (_, i) {
                   final file = files[i];
-                  final currentUid = FirebaseAuth.instance.currentUser!.uid;
                   final canDelete = currentUid == file.uploadedByUid ||
                       currentUid == widget.ownerUid ||
                       widget.adminUids.contains(currentUid);
@@ -200,10 +209,7 @@ class _FilesScreenState extends State<FilesScreen> {
                     onTap: () => _openFile(file),
                     trailing: canDelete
                         ? IconButton(
-                            icon: const Icon(
-                              Icons.delete,
-                              color: Colors.red,
-                            ),
+                            icon: const Icon(Icons.delete, color: Colors.red),
                             onPressed: () => _delete(file),
                           )
                         : null,
@@ -215,12 +221,10 @@ class _FilesScreenState extends State<FilesScreen> {
   }
 }
 
-/// A standalone screen that opens a local PDF file with pinch‐to‐zoom and scrolling,
-/// and disposes of its controller properly.
+/// In‐app PDF viewer with pinch‐zoom & scroll
 class PdfViewerScreen extends StatefulWidget {
   final String filePath;
   final String fileName;
-
   const PdfViewerScreen({
     required this.filePath,
     required this.fileName,
@@ -237,7 +241,6 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   @override
   void initState() {
     super.initState();
-    // Create a controller that will load the PDF and allow pinch/zoom + scroll
     _pdfController = PdfControllerPinch(
       document: PdfDocument.openFile(widget.filePath),
       initialPage: 1,
@@ -246,7 +249,6 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
   @override
   void dispose() {
-    // Dispose of the controller (which closes the document under the hood)
     _pdfController.dispose();
     super.dispose();
   }
@@ -257,11 +259,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       appBar: AppBar(title: Text(widget.fileName)),
       body: PdfViewPinch(
         controller: _pdfController,
-        onPageChanged: (page) => debugPrint('📄 Page changed to $page'),
-        // you can tweak these if you want:
-        // enableDoubleTap: true,
-        // minScale: 1.0,
-        // maxScale: 3.0,
+        onPageChanged: (page) => debugPrint('📄 Page $page'),
       ),
     );
   }

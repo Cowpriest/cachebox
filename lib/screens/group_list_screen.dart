@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+
 import 'login_screen.dart';
 import 'create_group_screen.dart';
 import 'join_group_screen.dart';
@@ -21,16 +22,8 @@ class _GroupListScreenState extends State<GroupListScreen> {
   void initState() {
     super.initState();
     debugGroupQuery();
-
-    FirebaseFirestore.instance
-        .collection('__debug')
-        .doc('ping')
-        .set({'ts': FieldValue.serverTimestamp()})
-        .then((_) => print('🔄 PING succeeded'))
-        .catchError((e) => print('⚠️ PING failed: $e'));
   }
 
-  /// Prints exactly what Firestore sees, and logs any permission error
   Future<void> debugGroupQuery() async {
     final uid = FirebaseAuth.instance.currentUser!.uid;
     final ref = FirebaseFirestore.instance.collection('groups');
@@ -55,7 +48,29 @@ class _GroupListScreenState extends State<GroupListScreen> {
     }
   }
 
+  Future<void> _leaveGroup(String groupId) async {
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+    try {
+      await FirebaseFirestore.instance
+          .collection('groups')
+          .doc(groupId)
+          .update({
+        'members': FieldValue.arrayRemove([uid]),
+        'admins': FieldValue.arrayRemove([uid]),
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You left the group.')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error leaving group: $e')),
+      );
+    }
+  }
+
   Future<void> _signOut(BuildContext ctx) async {
+    // clear any group-deletion banners before we zap auth
+    ScaffoldMessenger.of(ctx).clearMaterialBanners();
     await FirebaseAuth.instance.signOut();
     await GoogleSignIn().signOut();
     Navigator.pushReplacement(
@@ -70,10 +85,10 @@ class _GroupListScreenState extends State<GroupListScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Your Groups'),
+        title: const Text('Your Groups'),
         actions: [
           IconButton(
-            icon: Icon(Icons.logout),
+            icon: const Icon(Icons.logout),
             tooltip: 'Sign out',
             onPressed: () => _signOut(ctx),
           ),
@@ -86,41 +101,48 @@ class _GroupListScreenState extends State<GroupListScreen> {
             .orderBy(FieldPath.documentId)
             .snapshots(),
         builder: (ctx, snapshot) {
-          // 1. Error state
           if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));
           }
-          // 2. Loading state
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
+            return const Center(child: CircularProgressIndicator());
           }
-          // 3. Data state
+
+          // 1) grab all docs
           final docs = snapshot.data?.docs ?? [];
-          if (docs.isEmpty) {
-            // Empty-state UI
+          final now = DateTime.now();
+
+          // 2) filter out any group whose deletionTimestamp is past
+          final visible = docs.where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            final ts = data['deletionTimestamp'] as Timestamp?;
+            return ts == null || ts.toDate().isAfter(now);
+          }).toList();
+
+          if (visible.isEmpty) {
             return Center(
               child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 24),
+                padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
+                    const Text(
                       '😴 You’re not in any groups yet.',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 18),
                     ),
-                    SizedBox(height: 20),
+                    const SizedBox(height: 20),
                     ElevatedButton.icon(
-                      icon: Icon(Icons.group_add),
-                      label: Text('Create a Group'),
+                      icon: const Icon(Icons.group_add),
+                      label: const Text('Create a Group'),
                       onPressed: () => Navigator.push(
                         ctx,
                         MaterialPageRoute(builder: (_) => CreateGroupScreen()),
                       ),
                     ),
-                    SizedBox(height: 12),
+                    const SizedBox(height: 12),
                     TextButton(
-                      child: Text('Join a Group by Code'),
+                      child: const Text('Join a Group by Code'),
                       onPressed: () => Navigator.push(
                         ctx,
                         MaterialPageRoute(builder: (_) => JoinGroupScreen()),
@@ -131,15 +153,32 @@ class _GroupListScreenState extends State<GroupListScreen> {
               ),
             );
           }
-          // 4. Normal list + buttons
+
           return ListView(
             children: [
-              ...docs.map((doc) {
-                final name = doc['name'] as String;
+              ...visible.map((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                final name = data['name'] as String;
+                final ownerUid = data['ownerUid'] as String;
+
+                // Pending _future_ deletion?
+                final ts = data['deletionTimestamp'] as Timestamp?;
+                final isPending = ts != null && ts.toDate().isAfter(now);
+
                 return ListTile(
+                  leading: isPending
+                      ? const Icon(Icons.warning_rounded,
+                          color: Colors.orangeAccent)
+                      : null,
                   title: Text(name),
+                  subtitle: isPending
+                      ? const Text(
+                          'Pending deletion',
+                          style: TextStyle(color: Colors.orangeAccent),
+                        )
+                      : null,
                   onTap: () => Navigator.push(
-                    ctx,
+                    context,
                     MaterialPageRoute(
                       builder: (_) => GroupHomeScreen(
                         groupId: doc.id,
@@ -147,20 +186,41 @@ class _GroupListScreenState extends State<GroupListScreen> {
                       ),
                     ),
                   ),
+                  trailing: uid == ownerUid
+                      ? Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                          child: Text(
+                            'Owner',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                        )
+                      : PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert),
+                          onSelected: (choice) {
+                            if (choice == 'leave') _leaveGroup(doc.id);
+                          },
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(
+                                value: 'leave', child: Text('Leave group')),
+                          ],
+                        ),
                 );
               }),
-              Divider(),
+              const Divider(),
               ListTile(
-                leading: Icon(Icons.group_add),
-                title: Text('Create New Group'),
+                leading: const Icon(Icons.group_add),
+                title: const Text('Create New Group'),
                 onTap: () => Navigator.push(
                   ctx,
                   MaterialPageRoute(builder: (_) => CreateGroupScreen()),
                 ),
               ),
               ListTile(
-                leading: Icon(Icons.login),
-                title: Text('Join Group by Code'),
+                leading: const Icon(Icons.login),
+                title: const Text('Join Group by Code'),
                 onTap: () => Navigator.push(
                   ctx,
                   MaterialPageRoute(builder: (_) => JoinGroupScreen()),
