@@ -1,6 +1,7 @@
 // lib/main.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
@@ -48,6 +49,7 @@ void main() async {
     androidNotificationChannelName: 'Audio playback', // visible name
     androidNotificationOngoing: true, // make it sticky
   );
+  SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
 
   runApp(MyApp());
 }
@@ -57,9 +59,16 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Cache Box',
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        // your theme settings here...
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark().copyWith(
+        // pure black everywhere
+        scaffoldBackgroundColor: Colors.black,
+        canvasColor: Colors.black,
+        appBarTheme: AppBarTheme(
+          backgroundColor: const Color.fromARGB(255, 87, 0, 0),
+          elevation: 0,
+          systemOverlayStyle: SystemUiOverlayStyle.light,
+        ),
       ),
       home: AuthWrapper(),
     );
