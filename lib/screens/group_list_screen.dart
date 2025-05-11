@@ -21,32 +21,32 @@ class _GroupListScreenState extends State<GroupListScreen> {
   @override
   void initState() {
     super.initState();
-    debugGroupQuery();
+    //debugGroupQuery();
   }
 
-  Future<void> debugGroupQuery() async {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-    final ref = FirebaseFirestore.instance.collection('groups');
+  // Future<void> debugGroupQuery() async {
+  //   final uid = FirebaseAuth.instance.currentUser!.uid;
+  //   final ref = FirebaseFirestore.instance.collection('groups');
 
-    print('🚧 DEBUG: about to run query:'
-        ' .where("members", arrayContains: $uid)'
-        ' .orderBy(FieldPath.documentId)'
-        ' .limit(1)');
+  //   print('🚧 DEBUG: about to run query:'
+  //       ' .where("members", arrayContains: $uid)'
+  //       ' .orderBy(FieldPath.documentId)'
+  //       ' .limit(1)');
 
-    try {
-      final snap = await ref
-          .where('members', arrayContains: uid)
-          .orderBy(FieldPath.documentId)
-          .limit(1)
-          .get();
-      print('✅ DEBUG: query succeeded, docs returned=${snap.docs.length}');
-    } on FirebaseException catch (e) {
-      print('❌ DEBUG: FirebaseException.code = ${e.code}');
-      print('❌ DEBUG: FirebaseException.message = ${e.message}');
-    } catch (e) {
-      print('❌ DEBUG: unknown error: $e');
-    }
-  }
+  //   try {
+  //     final snap = await ref
+  //         .where('members', arrayContains: uid)
+  //         .orderBy(FieldPath.documentId)
+  //         .limit(1)
+  //         .get();
+  //     print('✅ DEBUG: query succeeded, docs returned=${snap.docs.length}');
+  //   } on FirebaseException catch (e) {
+  //     print('❌ DEBUG: FirebaseException.code = ${e.code}');
+  //     print('❌ DEBUG: FirebaseException.message = ${e.message}');
+  //   } catch (e) {
+  //     print('❌ DEBUG: unknown error: $e');
+  //   }
+  // }
 
   Future<void> _leaveGroup(String groupId) async {
     final uid = FirebaseAuth.instance.currentUser!.uid;

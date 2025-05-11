@@ -85,7 +85,11 @@ class _FilesScreenState extends State<FilesScreen> {
     _showLoadingDialog();
     try {
       // fieldName is 'file' to match your multer setup
-      await _service.uploadFile(widget.groupId, path, 'file');
+      await _service.uploadFile(
+        widget.groupId,
+        filePath: path, // or fileBytes: picked.bytes
+        filename: name,
+      );
       await _refresh();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -168,7 +172,7 @@ class _FilesScreenState extends State<FilesScreen> {
   Future<void> _delete(FileModel file) async {
     _showLoadingDialog();
     try {
-      await _service.deleteFile(widget.groupId, file);
+      await _service.deleteFile(widget.groupId, file.id);
       await _refresh();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(

@@ -1,11 +1,17 @@
 // lib/screens/file_upload_screen.dart
+
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+
+// ← Import wherever you've declared your host/port once:
+// e.g. lib/services/file_service.dart
+import '../services/file_service.dart';
 
 class FileUploadScreen extends StatefulWidget {
   final String groupId;
@@ -17,114 +23,128 @@ class FileUploadScreen extends StatefulWidget {
 
 class _FileUploadScreenState extends State<FileUploadScreen> {
   bool _uploading = false;
-  String? _uploadStatus;
+  String _uploadStatus = '';
   double _uploadProgress = 0.0;
 
   Future<void> _pickAndUploadFile() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles();
-    if (result != null) {
-      setState(() {
-        _uploading = true;
-        _uploadStatus = "Uploading...";
-        _uploadProgress = 0.0; // Reset progress
-      });
-
-      final file = result.files.single;
-      String? filePath = file.path; // Path for physical devices
-      Uint8List? fileBytes = file.bytes; // Bytes for web
-
-      print("🟢 File Selected: ${file.name}");
-      print("📂 File Path: ${filePath ?? 'No file path available'}");
-      print("📏 File Size: ${file.size} bytes");
-
-      // If fileBytes is null, try reading from file path (for physical devices)
-      if (fileBytes == null) {
-        if (filePath != null) {
-          try {
-            print("🔍 Attempting to read bytes from file path...");
-            fileBytes = await File(filePath).readAsBytes();
-            print("✅ File bytes successfully read (${fileBytes.length} bytes)");
-          } catch (e) {
-            print("❌ Error reading file bytes: $e");
-            setState(() {
-              _uploadStatus = "Error reading file.";
-              _uploading = false;
-            });
-            return;
-          }
-        } else {
-          print("❌ File path is null. Cannot read file bytes.");
-          setState(() {
-            _uploadStatus = "File path is null.";
-            _uploading = false;
-          });
-          return;
-        }
-      }
-
-      // Set Firebase Storage reference
-      final storageRef = FirebaseStorage.instance.ref().child(
-        'groups/${widget.groupId}/files/${file.name}',
-      );
-      print("🚀 Attempting to upload to: ${storageRef.fullPath}");
-
-      try {
-        final UploadTask uploadTask = storageRef.putData(fileBytes);
-
-        // Listen to snapshot events and update _uploadProgress.
-        uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
-          double progress = snapshot.bytesTransferred / snapshot.totalBytes;
-          print('📈 Upload progress: ${(progress * 100).toStringAsFixed(0)}%');
-          setState(() {
-            _uploadProgress = progress;
-          });
-        });
-
-        // Wait for the upload to complete
-        await uploadTask;
-
-        // Once the file is uploaded, retrieve its download URL
-        final downloadUrl = await storageRef.getDownloadURL();
-        print('🔗 Download URL: $downloadUrl');
-
-        // Save metadata to Firestore
-        // Save metadata to the group’s files subcollection
-        await FirebaseFirestore.instance
-            .collection('groups')
-            .doc(widget.groupId)
-            .collection('files')
-            .add({
-              'fileName': file.name,
-              'fileUrl': downloadUrl,
-              'uploadedAt': FieldValue.serverTimestamp(),
-              // who clicked “upload”:
-              'uploadedByName':
-                  FirebaseAuth.instance.currentUser?.displayName ?? "Unknown",
-              'uploadedByUid': FirebaseAuth.instance.currentUser!.uid,
-              'storagePath': storageRef.fullPath,
-              'fileSize': file.size,
-            });
-
-        print("✅ File metadata saved to Firestore: ${file.name}");
-
-        setState(() {
-          _uploadStatus = "Upload successful!";
-          _uploading = false;
-        });
-      } catch (e) {
-        print("❌ Upload failed: $e");
-        setState(() {
-          _uploadStatus = "Upload failed: $e";
-          _uploading = false;
-        });
-      }
-    } else {
+    final result = await FilePicker.platform.pickFiles();
+    if (result == null) {
       print("⚠ No file selected.");
+      return;
+    }
+
+    setState(() {
+      _uploading = true;
+      _uploadStatus = "Uploading...";
+      _uploadProgress = 0.0;
+    });
+
+    final file = result.files.single;
+    Uint8List? bytes = file.bytes;
+    final path = file.path;
+
+    // Load bytes on physical devices if needed
+    if (bytes == null && path != null) {
+      try {
+        bytes = await File(path).readAsBytes();
+      } catch (e) {
+        print("❌ Error reading bytes: $e");
+        setState(() {
+          _uploading = false;
+          _uploadStatus = "Failed reading file.";
+        });
+        return;
+      }
+    }
+    if (bytes == null) {
+      setState(() {
+        _uploading = false;
+        _uploadStatus = "No data to upload.";
+      });
+      return;
+    }
+
+    // 1) Upload raw bytes to Firebase Storage so your Node server can serve them
+    final storageRef = FirebaseStorage.instance
+        .ref('groups/${widget.groupId}/files/${file.name}');
+    final uploadTask = storageRef.putData(bytes);
+
+    uploadTask.snapshotEvents.listen((snap) {
+      final progress = snap.bytesTransferred / snap.totalBytes;
+      setState(() => _uploadProgress = progress);
+      print("📈 ${(progress * 100).toStringAsFixed(0)}%");
+    });
+
+    String downloadUrl;
+    try {
+      await uploadTask;
+      downloadUrl = await storageRef.getDownloadURL();
+      print("🔗 Download URL: $downloadUrl");
+    } catch (e) {
+      print("❌ Storage upload failed: $e");
+      setState(() {
+        _uploading = false;
+        _uploadStatus = "Storage upload failed.";
+      });
+      return;
+    }
+
+    // 2) Send metadata + the FILE to your Node.js server with a Bearer token
+    try {
+      final user = FirebaseAuth.instance.currentUser!;
+      final idToken = await user.getIdToken();
+      final displayName = user.displayName ?? user.email ?? user.uid;
+
+      // Build the MultipartRequest
+      final uri = Uri.parse(FileService.uploadUrl(widget.groupId));
+      final req = http.MultipartRequest('POST', uri)
+        ..headers['Authorization'] = 'Bearer $idToken'
+        ..fields['uploadedByUid'] = user.uid
+        ..fields['uploadedByName'] = displayName
+        ..fields['fileUrl'] = downloadUrl;
+
+      // Attach the file under the same key your server expects:
+      if (path != null) {
+        req.files.add(await http.MultipartFile.fromPath(
+          'file',
+          path,
+          filename: file.name,
+        ));
+      } else {
+        req.files.add(http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: file.name,
+        ));
+      }
+
+      // Fire off the request
+      final streamedRes = await req.send();
+      final body = await streamedRes.stream.bytesToString();
+      print('📥 status=${streamedRes.statusCode}, body=$body');
+
+      if (streamedRes.statusCode == 200) {
+        setState(() {
+          _uploading = false;
+          _uploadStatus = "Upload successful!";
+        });
+      } else {
+        setState(() {
+          _uploading = false;
+          _uploadStatus = "Server error: ${streamedRes.statusCode}";
+        });
+      }
+    } catch (e) {
+      print("❌ Server call failed: $e");
+      setState(() {
+        _uploading = false;
+        _uploadStatus = "Upload failed: $e";
+      });
     }
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext ctx) {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Upload Files"),
@@ -138,7 +158,7 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
               Column(
                 children: [
                   CircularProgressIndicator(value: _uploadProgress),
-                  SizedBox(height: 8),
+                  const SizedBox(height: 8),
                   Text('${(_uploadProgress * 100).toStringAsFixed(0)}%'),
                 ],
               ),
@@ -146,10 +166,10 @@ class _FileUploadScreenState extends State<FileUploadScreen> {
               onPressed: _uploading ? null : _pickAndUploadFile,
               child: const Text("Upload File"),
             ),
-            if (_uploadStatus != null)
+            if (_uploadStatus.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.all(8.0),
-                child: Text(_uploadStatus!),
+                child: Text(_uploadStatus),
               ),
           ],
         ),
