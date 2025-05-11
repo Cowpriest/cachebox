@@ -1,4 +1,5 @@
 // lib/main.dart
+import 'package:cachebox/screens/group_list_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -84,7 +85,7 @@ class AuthWrapper extends StatelessWidget {
         if (snapshot.connectionState == ConnectionState.active) {
           final User? user = snapshot.data;
           // If the user is signed in, show the ChatScreen; otherwise, show LoginScreen
-          return user == null ? LoginScreen() : HomeScreen();
+          return user == null ? LoginScreen() : GroupListScreen();
         }
         // Loading indicator while checking auth state
         return Scaffold(
