@@ -27,7 +27,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   Future<void> _create() async {
     setState(() => _loading = true);
     final code = _makeCode(6);
-    Clipboard.setData(ClipboardData(text: code!));
+    Clipboard.setData(ClipboardData(text: code));
     final uid = FirebaseAuth.instance.currentUser!.uid;
     await FirebaseFirestore.instance.collection('groups').add({
       'name': _nameCtrl.text.trim(),
