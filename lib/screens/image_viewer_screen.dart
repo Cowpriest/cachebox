@@ -2,23 +2,19 @@ import 'package:flutter/material.dart';
 
 class ImageViewerScreen extends StatelessWidget {
   final String imageUrl;
+  final String fileName;
 
-  const ImageViewerScreen({required this.imageUrl});
+  const ImageViewerScreen({required this.imageUrl, required this.fileName});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Image')),
+      appBar: AppBar(title: Text(fileName)),
       body: InteractiveViewer(
         maxScale: 5.0,
         minScale: 0.5,
         child: Center(
-          child: Image.network(
-            imageUrl,
-            fit: BoxFit.contain,
-            width: double.infinity,
-            height: double.infinity,
-          ),
+          child: Image.network(imageUrl),
         ),
       ),
     );

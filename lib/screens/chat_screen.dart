@@ -23,6 +23,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    //LastPaneStore.set(widget.groupId, LastPane.chat);
     _messages = FirebaseFirestore.instance
         .collection('groups')
         .doc(widget.groupId)
@@ -63,7 +64,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 .style, // Inherit the default text style
             children: [
               TextSpan(
-                text: 'CacheBox | ',
+                //text: 'CacheBox | ',
                 style: TextStyle(fontSize: 16),
               ),
               TextSpan(

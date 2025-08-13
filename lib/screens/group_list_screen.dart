@@ -159,7 +159,10 @@ class _GroupListScreenState extends State<GroupListScreen> {
               ...visible.map((doc) {
                 final data = doc.data() as Map<String, dynamic>;
                 final name = data['name'] as String;
-                final ownerUid = data['ownerUid'] as String;
+                final ownerUid = data['ownerUid'] as String?;
+                final adminUids = (data['adminUids'] as List?)
+                    ?.map((e) => e as String)
+                    .toList();
 
                 // Pending _future_ deletion?
                 final ts = data['deletionTimestamp'] as Timestamp?;
@@ -183,6 +186,8 @@ class _GroupListScreenState extends State<GroupListScreen> {
                       builder: (_) => GroupHomeScreen(
                         groupId: doc.id,
                         groupName: name,
+                        ownerUid: ownerUid,
+                        adminUids: adminUids,
                       ),
                     ),
                   ),
