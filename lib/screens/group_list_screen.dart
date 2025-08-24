@@ -87,10 +87,9 @@ class _GroupListScreenState extends State<GroupListScreen> {
       appBar: AppBar(
         title: const Text('Your Groups'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Sign out',
+          TextButton(
             onPressed: () => _signOut(ctx),
+            child: Text('Logout'),
           ),
         ],
       ),

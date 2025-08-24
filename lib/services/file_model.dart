@@ -16,26 +16,29 @@ class FileModel {
     this.mimeType,
   });
   factory FileModel.fromJson(Map<String, dynamic> json) => FileModel(
-    id: json['id'] as String,
-    fileName: json['fileName'] as String,
-    fileUrl: json['fileUrl'] as String,
-    uploadedByUid: json['uploadedByUid'] as String,
-    uploadedByName: json['uploadedByName'] as String,
-    storagePath: json['storagePath'] as String,
-    mimeType: json['mimeType'] as String?,
-  );
+        id: json['id'] as String,
+        fileName: json['fileName'] as String,
+        fileUrl: json['fileUrl'] as String,
+        uploadedByUid: json['uploadedByUid'] as String,
+        uploadedByName: json['uploadedByName'] as String,
+        storagePath: json['storagePath'] as String,
+        mimeType: json['mimeType'] as String?,
+      );
 }
+
 class FolderModel {
   final String name;
   final String path;
   final int? childrenCount;
   FolderModel({required this.name, required this.path, this.childrenCount});
   factory FolderModel.fromJson(Map<String, dynamic> json) => FolderModel(
-    name: json['name'] as String,
-    path: json['path'] as String,
-    childrenCount: json['childrenCount'] is int ? json['childrenCount'] as int : null,
-  );
+        name: json['name'] as String,
+        path: json['path'] as String,
+        childrenCount:
+            json['childrenCount'] is int ? json['childrenCount'] as int : null,
+      );
 }
+
 class DirectoryListing {
   final List<FolderModel> folders;
   final List<FileModel> files;

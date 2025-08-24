@@ -56,38 +56,38 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false, // Removes the default back button
-        title: RichText(
-          text: TextSpan(
-            style: DefaultTextStyle.of(context)
-                .style, // Inherit the default text style
-            children: [
-              TextSpan(
-                //text: 'CacheBox | ',
-                style: TextStyle(fontSize: 16),
-              ),
-              TextSpan(
-                text: FirebaseAuth.instance.currentUser?.email ?? '',
-                style: TextStyle(
-                    fontSize: 10), // Smaller text size for the email address
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.logout),
-            onPressed: () async {
-              logout();
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (_) => LoginScreen()),
-              );
-            },
-          ),
-        ],
-      ),
+      // appBar: AppBar(
+      //   automaticallyImplyLeading: false, // Removes the default back button
+      //   title: RichText(
+      //     text: TextSpan(
+      //       style: DefaultTextStyle.of(context)
+      //           .style, // Inherit the default text style
+      //       children: [
+      //         TextSpan(
+      //           //text: 'CacheBox | ',
+      //           style: TextStyle(fontSize: 16),
+      //         ),
+      //         TextSpan(
+      //           text: FirebaseAuth.instance.currentUser?.email ?? '',
+      //           style: TextStyle(
+      //               fontSize: 10), // Smaller text size for the email address
+      //         ),
+      //       ],
+      //     ),
+      //   ),
+      //   actions: [
+      //     IconButton(
+      //       icon: Icon(Icons.logout),
+      //       onPressed: () async {
+      //         logout();
+      //         Navigator.pushReplacement(
+      //           context,
+      //           MaterialPageRoute(builder: (_) => LoginScreen()),
+      //         );
+      //       },
+      //     ),
+      //   ],
+      // ),
       body: Column(
         children: [
           Expanded(

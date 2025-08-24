@@ -1,13 +1,20 @@
 // lib/screens/video_player_screen.dart
 import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/resume_store.dart';
+
 class VideoPlayerScreen extends StatefulWidget {
   final String videoUrl;
   final String? fileName;
+  // final String? resumeKey;
+  // final int? initialResumeMs;
+  final bool resumeOnInitialOpen;
 
   // Optional: provide the whole folder playlist (sorted alphanumerically).
   final List<String>? playlistUrls; // parallel to playlistNames
@@ -21,6 +28,7 @@ class VideoPlayerScreen extends StatefulWidget {
     this.playlistUrls,
     this.playlistNames,
     this.initialIndex,
+    this.resumeOnInitialOpen = true,
   });
 
   @override
@@ -32,23 +40,90 @@ enum _LoopMode { none, one, all }
 class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   late final Player _player;
   late final VideoController _controller;
+  Timer? _saveTimer;
+  bool _resumeApplied = false;
+  StreamSubscription<Duration>? _posSub;
+  StreamSubscription<Duration>? _durSub;
+  String? _activeResumeKey; // updates when playlist item changes
+  bool _resumeAllowedForThisItem = false;
+  int? _lastPlaylistIndex;
+  bool _sawFirstPlaylistEvent = false;
+  bool _ignoreNextIndexChangeOnce = false;
+  bool _forceStartFromZeroOnce = false;
 
-  StreamSubscription<dynamic>? _errorSub;
+  // Tracks
+  List<AudioTrack> _audioTracks = const [];
+  List<SubtitleTrack> _subtitleTracks = const [];
+  AudioTrack? _currentAudio;
+  SubtitleTrack? _currentSubtitle; // null means "Auto" for label purposes
+
   StreamSubscription<Tracks>? _tracksSub;
+  StreamSubscription<dynamic>? _errorSub;
   StreamSubscription<PlaylistMode>? _modeSub;
   StreamSubscription<Playlist>? _playlistSub;
-  bool _audioOnly = false;
 
-  // Subtitles
-  List<SubtitleTrack> _subtitleTracks = const [];
-  SubtitleTrack? _currentSubtitle;
+  bool _audioOnly = false;
   // Persisted subtitle pref: 'off' | 'auto' | null (unset)
   static const _kSubtitlePrefKey = 'video_subtitle_pref';
   String? _savedSubtitlePref; // last saved value
   bool _savedPrefAppliedOnce = false; // apply once after tracks appear
+  StreamSubscription<bool>? _playingSub;
 
   bool _isOff(SubtitleTrack t) => t.id == SubtitleTrack.no().id;
   bool _isAuto(SubtitleTrack t) => t.id == SubtitleTrack.auto().id;
+
+  Future<void> _seekResumeWhenReady() async {
+    // If duration is already known, resume immediately.
+    if ((_player.state.duration ?? Duration.zero) > Duration.zero) {
+      await _maybeSeekResume();
+      return;
+    }
+    // Otherwise wait once for duration > 0, then try.
+    late final StreamSubscription<Duration> sub;
+    final c = Completer<void>();
+    sub = _player.stream.duration.listen((d) async {
+      if (d > Duration.zero) {
+        await _maybeSeekResume();
+        await sub.cancel();
+        if (!c.isCompleted) c.complete();
+      }
+    });
+    await c.future;
+  }
+
+  void _forceStartAtZeroWhenPlaying() {
+    // If we somehow already advanced, yank back to 0.
+    if ((_player.state.position ?? Duration.zero) > Duration.zero) {
+      unawaited(_player.seek(Duration.zero));
+      return;
+    }
+    // Otherwise wait once for the first position tick & yank to 0.
+    late final StreamSubscription<Duration> sub;
+    sub = _player.stream.position.listen((p) {
+      if (p > Duration.zero) {
+        unawaited(_player.seek(Duration.zero));
+        sub.cancel();
+      }
+    });
+  }
+
+  /// One place to apply the policy for the *current* item.
+  Future<void> _applyResumePolicyForCurrent({required bool allowResume}) async {
+    _resumeApplied = false;
+    _resumeAllowedForThisItem = allowResume;
+    _activeResumeKey = _keyForCurrent();
+    if (allowResume) {
+      await _seekResumeWhenReady();
+    } else {
+      _forceStartAtZeroWhenPlaying();
+    }
+  }
+
+  String _keyForUrl(String uri) {
+    // keep keys prefs-safe & shortish
+    final b64 = base64Url.encode(utf8.encode(uri)).replaceAll('=', '');
+    return 'resume:$b64';
+  }
 
   Future<void> _persistSubtitlePref(String pref) async {
     final prefs = await SharedPreferences.getInstance();
@@ -73,6 +148,116 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     if (mounted) setState(() {});
   }
 
+  List<AudioTrack> _filterAudioTracks(List<AudioTrack> list) {
+    return list.where((t) {
+      final id = (t.id ?? '').trim().toLowerCase();
+      // Hide pseudo/control entries
+      return id != 'auto' && id != 'no' && id != '-1' && id != 'unknown';
+    }).toList(growable: false);
+  }
+
+  String _fullAudioLabel(AudioTrack t) {
+    final parts = <String>[];
+
+    // prefer language (uppercased), then title, then codec
+    final lang = (t.language ?? '').trim();
+    if (lang.isNotEmpty) parts.add(lang.toUpperCase());
+
+    final title = (t.title ?? '').trim();
+    if (title.isNotEmpty) parts.add(title);
+
+    final codec = (t.codec ?? '').trim();
+    if (codec.isNotEmpty) parts.add(codec);
+
+    // fallback
+    return parts.isEmpty ? 'Audio' : parts.join(' · ');
+  }
+
+  String _keyForCurrent() {
+    // Prefer provided key; else fallback to URL-based key for current media.
+    final st = _player.state;
+    final idx = st.playlist.index;
+    final uri = (st.playlist.medias.isNotEmpty && idx != null && idx >= 0)
+        ? st.playlist.medias[idx].uri
+        : widget.videoUrl;
+    return _keyForUrl(uri);
+  }
+
+  Future<void> _maybeSeekResume() async {
+    if (_forceStartFromZeroOnce) return;
+    if (_resumeApplied || !_resumeAllowedForThisItem) {
+      // debugPrint(
+      //     'resume: skip (applied=$_resumeApplied, allowed=$_resumeAllowedForThisItem)');
+      return;
+    }
+    final key = _keyForCurrent();
+    final resumeMs = await ResumeStore.load(key);
+    final dur = _player.state.duration ?? Duration.zero;
+    //debugPrint('resume: loaded=$resumeMs, dur=${dur.inMilliseconds}');
+    if (resumeMs != null &&
+        resumeMs > 5000 &&
+        dur > Duration.zero &&
+        resumeMs < (dur.inMilliseconds - 5000)) {
+      await _player.seek(Duration(milliseconds: resumeMs));
+      _resumeApplied = true;
+      //debugPrint('resume: SEEK to $resumeMs ms');
+    }
+    _activeResumeKey = key;
+  }
+
+  Future<void> _persistPosition() async {
+    final key = _activeResumeKey ?? _keyForCurrent();
+    final pos = _player.state.position?.inMilliseconds ?? 0;
+    final dur = _player.state.duration?.inMilliseconds ?? 0;
+    if (pos > 1000) {
+      await ResumeStore.save(key: key, positionMs: pos, durationMs: dur);
+    }
+  }
+
+  Future<void> _maybeClearNearEnd() async {
+    final key = _activeResumeKey ?? _keyForCurrent();
+    final pos = _player.state.position ?? Duration.zero;
+    final dur = _player.state.duration ?? Duration.zero;
+    if (dur > Duration.zero && (dur - pos).inSeconds <= 10) {
+      await ResumeStore.clear(key);
+    }
+  }
+
+  /// Build human labels for audio tracks & ensure they are unique.
+  /// If two different streams both become "Audio", this will make them:
+  /// "Audio · Track 1", "Audio · Track 2", etc.  If an id exists, we append a short id.
+  List<String> _audioLabelsUnique(List<AudioTrack> tracks) {
+    final base = tracks.map(_fullAudioLabel).toList(growable: false);
+
+    // count occurrences
+    final counts = <String, int>{};
+    for (final b in base) {
+      counts[b] = (counts[b] ?? 0) + 1;
+    }
+
+    // build unique labels
+    final out = <String>[];
+    final seenSoFar = <String, int>{};
+    for (int i = 0; i < tracks.length; i++) {
+      final b = base[i];
+      if ((counts[b] ?? 0) <= 1) {
+        out.add(b);
+        continue;
+      }
+      // duplicate label: append index or short id
+      final shortId = (tracks[i].id ?? '').trim();
+      final n = (seenSoFar[b] ?? 0) + 1;
+      seenSoFar[b] = n;
+
+      if (shortId.isNotEmpty) {
+        out.add('$b · ${shortId}');
+      } else {
+        out.add('$b · Track $n');
+      }
+    }
+    return out;
+  }
+
   // Looping & playlist
   _LoopMode _loopMode = _LoopMode.one;
   bool _hasUsablePlaylist = false;
@@ -94,10 +279,13 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
     _player = Player();
     _controller = VideoController(_player);
+
+    _resumeAllowedForThisItem = widget.resumeOnInitialOpen;
+
     // Apply saved Off/Auto immediately (and set chip)
     _restoreSubtitlePref();
-
     _initPlaylistFromWidget();
+    _ignoreNextIndexChangeOnce = _hasUsablePlaylist;
     _applyLoopMode(_LoopMode.one, initializing: true);
 
     _modeSub = _player.stream.playlistMode.listen((mode) {
@@ -107,24 +295,68 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       if (mounted) setState(() => _loopMode = m);
     });
 
-    _playlistSub = _player.stream.playlist.listen((pl) {
+    _playlistSub = _player.stream.playlist.listen((pl) async {
       if (!mounted || pl == null) return;
-      _updateTitleFromState(showToast: true); // toast is now deferred safely
+      _updateTitleFromState(showToast: true);
+
+      final idx = _player.state.playlist.index ?? 0;
+
+      // First playlist event after open.
+      if (!_sawFirstPlaylistEvent) {
+        _sawFirstPlaylistEvent = true;
+        _lastPlaylistIndex = idx;
+        _activeResumeKey = _keyForCurrent();
+
+        // If we won't do a jump(), this *is* the initial user-open item.
+        if (!_ignoreNextIndexChangeOnce) {
+          await _applyResumePolicyForCurrent(
+            allowResume: widget.resumeOnInitialOpen,
+          );
+        }
+        return;
+      }
+
+      // Subsequent index changes.
+      if (_lastPlaylistIndex != idx) {
+        _lastPlaylistIndex = idx;
+        _activeResumeKey = _keyForCurrent();
+
+        if (_ignoreNextIndexChangeOnce) {
+          // The jump() we triggered to land on initialIndex.
+          _ignoreNextIndexChangeOnce = false;
+          await _applyResumePolicyForCurrent(
+            allowResume: widget.resumeOnInitialOpen,
+          );
+        } else {
+          // Real autoplay/next (including Replay All loop): start from 0.
+          await _applyResumePolicyForCurrent(allowResume: false);
+        }
+      }
     });
 
     _tracksSub = _player.stream.tracks.listen((tracks) async {
-      final filtered = _filterSubtitleTracks(tracks.subtitle);
-      final deduped = _dedupeById(filtered);
-      if (!mounted) return;
+      // Subtitles: filter & dedupe like before
+      final filteredSubs = _filterSubtitleTracks(tracks.subtitle);
+      final dedupedSubs = _dedupeById(filteredSubs);
 
+      if (!mounted) return;
       setState(() {
-        _subtitleTracks = deduped; // (we removed the injected 'Off' earlier)
-        _audioOnly = tracks.video.isEmpty; // <--- no video tracks => audio-only
-        //debug:
-        print('audioOnly = $_audioOnly; videoTracks = ${tracks.video.length}');
+        _audioTracks = _filterAudioTracks(tracks.audio);
+        _subtitleTracks = _dedupeById(_filterSubtitleTracks(tracks.subtitle));
+        _audioOnly = tracks.video.isEmpty; // audio-only file if no video tracks
+        if (_currentAudio == null && _audioTracks.length > 1) {
+          final engIdx = _findPreferredEnglishAudioIndex(_audioTracks);
+          if (engIdx >= 0) {
+            final engTrack = _audioTracks[engIdx];
+            // Apply once, guarded & fire-and-forget; ignore errors silently
+            _player.setAudioTrack(engTrack).then((_) {
+              if (mounted) setState(() => _currentAudio = engTrack);
+            }).catchError((_) {});
+          }
+        }
       });
 
-      // Apply saved Off/Auto once, in case the demuxer auto-picked something
+      // Apply saved Off/Auto once after tracks appear
       if (!_savedPrefAppliedOnce) {
         _savedPrefAppliedOnce = true;
         final pref = _savedSubtitlePref ?? 'off';
@@ -149,27 +381,80 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       }
     });
 
+    // Seek to resume once we know duration (> 0).
+    _durSub = _player.stream.duration.listen((d) {
+      if (d > Duration.zero) {
+        if (_forceStartFromZeroOnce) {
+          _forceStartFromZeroOnce = false;
+          unawaited(_player.seek(Duration.zero)); // <-- fire and forget
+          return;
+        }
+        // _maybeSeekResume();
+      }
+    });
+
+    _playingSub = _player.stream.playing.listen((isPlaying) {
+      if (isPlaying) {
+        if (_forceStartFromZeroOnce) {
+          _forceStartFromZeroOnce = false;
+          unawaited(_player.seek(Duration.zero)); // <-- fire and forget
+          return;
+        }
+        //_maybeSeekResume(); // try again once playback is on
+      }
+    });
+
+// Periodically save position (and clear when near end).
+    _posSub = _player.stream.position.listen((_) {
+      _maybeClearNearEnd();
+    });
+
+    _resumeApplied = false;
+    _resumeAllowedForThisItem = widget.resumeOnInitialOpen;
+
     if (_hasUsablePlaylist) {
+      _ignoreNextIndexChangeOnce = true; // we’re about to jump
       _player.open(Playlist(_playlist), play: true);
-      _player.jump(_currentIndex);
-      _updateTitleFromState(showToast: true); // deferred internally
+      _player.jump(_currentIndex); // triggers one index change we ignore
+      _updateTitleFromState(showToast: true);
     } else {
+      _activeResumeKey = _keyForUrl(widget.videoUrl);
       _player.open(Media(widget.videoUrl), play: true);
       _currentTitle = widget.fileName ?? _basename(widget.videoUrl);
-      _showTitleToastOverlayAfterBuild(_currentTitle!); // <-- defer toast
+      _showTitleToastOverlayAfterBuild(_currentTitle!);
       setState(() {});
+      // Single item: apply policy once.
+      unawaited(_applyResumePolicyForCurrent(
+        allowResume: widget.resumeOnInitialOpen,
+      ));
     }
+
+    _saveTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      _persistPosition();
+    });
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    // Hot reload safety: allow resume logic to re-run.
+    _resumeApplied = false;
+    _resumeAllowedForThisItem = widget.resumeOnInitialOpen;
   }
 
   @override
   void dispose() {
     _titleHideTimer?.cancel();
-    //_controlsHideTimer?.cancel();
     _removeTitleOverlay();
     _errorSub?.cancel();
     _tracksSub?.cancel();
     _modeSub?.cancel();
     _playlistSub?.cancel();
+    _playingSub?.cancel();
+    _posSub?.cancel();
+    _durSub?.cancel();
+    _saveTimer?.cancel();
+    _persistPosition(); // best-effort final save
     _player.dispose();
     super.dispose();
   }
@@ -254,6 +539,33 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   // ---------- subtitles ----------
 
+  int _findPreferredEnglishAudioIndex(List<AudioTrack> tracks) {
+    if (tracks.isEmpty) return -1;
+
+    // 1) Perfect match: language code like "en", "eng"
+    final idxLang = tracks.indexWhere((t) {
+      final lang = (t.language ?? '').trim().toLowerCase();
+      return lang == 'en' || lang == 'eng' || lang.startsWith('en-');
+    });
+    if (idxLang >= 0) return idxLang;
+
+    // 2) Title mentions English (handles weird metadata)
+    final idxTitle = tracks.indexWhere((t) {
+      final title = (t.title ?? '').toLowerCase();
+      return title.contains('english') || RegExp(r'\beng\b').hasMatch(title);
+    });
+    if (idxTitle >= 0) return idxTitle;
+
+    // 3) Language contains "en" anywhere (very loose fallback)
+    final idxLoose = tracks.indexWhere((t) {
+      final lang = (t.language ?? '').toLowerCase();
+      return lang.contains('en');
+    });
+    if (idxLoose >= 0) return idxLoose;
+
+    return -1;
+  }
+
   List<SubtitleTrack> _filterSubtitleTracks(List<SubtitleTrack> list) {
     return list.where((t) {
       final id = (t.id ?? '').trim().toLowerCase();
@@ -296,78 +608,246 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     return '${full.substring(0, maxLen)}…';
   }
 
-  Future<void> _showSubtitlePicker() async {
+  Future<void> _showTracksPicker() async {
     if (!mounted) return;
-    final chosen = await showModalBottomSheet<SubtitleTrack?>(
+
+    await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       backgroundColor: Colors.black87,
+      isScrollControlled: true,
       builder: (ctx) {
+        // Local state inside the sheet for selected radio indices
+        int selectedAudio = _currentAudio != null
+            ? _audioTracks.indexWhere((t) => t.id == _currentAudio!.id)
+            : -1;
+
+// If only one real track, preselect it.
+        if (selectedAudio < 0 && _audioTracks.length == 1) {
+          selectedAudio = 0;
+          if (_currentAudio == null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) setState(() => _currentAudio = _audioTracks.first);
+            });
+          }
+        }
+
+// If multiple, prefer English if available.
+        if (selectedAudio < 0 && _audioTracks.length > 1) {
+          final engIdx = _findPreferredEnglishAudioIndex(_audioTracks);
+          if (engIdx >= 0) {
+            selectedAudio = engIdx;
+            if (_currentAudio == null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted)
+                  setState(() => _currentAudio = _audioTracks[engIdx]);
+              });
+            }
+          }
+        }
+
+        // Subs: -1 = Off, -2 = Auto, >=0 = index in _subtitleTracks
+        int selectedSub;
+        if (_currentSubtitle == null || _isAuto(_currentSubtitle!)) {
+          selectedSub = -2;
+        } else if (_isOff(_currentSubtitle!)) {
+          selectedSub = -1;
+        } else {
+          selectedSub = _subtitleTracks.indexWhere(
+            (t) => t.id == _currentSubtitle!.id,
+          );
+        }
+
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.subtitles_off, color: Colors.white70),
-                title: const Text('Off', style: TextStyle(color: Colors.white)),
-                onTap: () => Navigator.pop(ctx, SubtitleTrack.no()),
-              ),
-              ListTile(
-                leading: const Icon(Icons.auto_fix_high, color: Colors.white70),
-                title:
-                    const Text('Auto', style: TextStyle(color: Colors.white)),
-                onTap: () => Navigator.pop(ctx, SubtitleTrack.auto()),
-              ),
-              const Divider(color: Colors.white24, height: 1),
-              if (_subtitleTracks.isEmpty)
-                const ListTile(
-                  enabled: false,
-                  leading: Icon(Icons.info_outline, color: Colors.white30),
-                  title: Text(
-                    'No embedded tracks found',
-                    style: TextStyle(color: Colors.white54),
-                  ),
-                )
-              else
-                Flexible(
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: _subtitleTracks.length,
-                    itemBuilder: (_, i) {
-                      final t = _subtitleTracks[i];
-                      final label = _fullSubtitleLabel(t);
-                      return ListTile(
-                        leading:
-                            const Icon(Icons.subtitles, color: Colors.white70),
-                        title: Text(label,
-                            style: const TextStyle(color: Colors.white)),
-                        onTap: () => Navigator.pop(ctx, t),
-                      );
-                    },
-                  ),
+          child: StatefulBuilder(
+            builder: (ctx, setSheetState) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const ListTile(
+                      title: Text('Audio / Subtitles',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          )),
+                      subtitle: Text('Choose audio language/track and subtitle',
+                          style: TextStyle(color: Colors.white70)),
+                    ),
+                    const Divider(color: Colors.white24, height: 1),
+
+                    // ---------- AUDIO ----------
+                    const ListTile(
+                      title: Text('Audio',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          )),
+                    ),
+                    if (_audioTracks.isEmpty)
+                      const Padding(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('No audio tracks reported',
+                              style: TextStyle(color: Colors.white54)),
+                        ),
+                      )
+                    else
+                      ...List.generate(_audioTracks.length, (i) {
+                        final audioLabels = _audioLabelsUnique(_audioTracks);
+                        final t = _audioTracks[i];
+                        final label = audioLabels[i];
+                        return RadioListTile<int>(
+                          value: i,
+                          groupValue: selectedAudio,
+                          onChanged: (v) async {
+                            if (v == null) return;
+                            final chosen = _audioTracks[v];
+                            try {
+                              await _player.setAudioTrack(chosen);
+                              if (!mounted) return;
+                              setState(() => _currentAudio = chosen);
+                              setSheetState(() => selectedAudio = v);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Audio: $label')),
+                              );
+                            } catch (e) {
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content: Text('Failed to set audio: $e')),
+                              );
+                            }
+                          },
+                          title: Text(label,
+                              style: const TextStyle(color: Colors.white)),
+                          activeColor: Colors.white,
+                        );
+                      }),
+
+                    const Divider(color: Colors.white24, height: 1),
+
+                    // ---------- SUBTITLES ----------
+                    const ListTile(
+                      title: Text('Subtitles',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          )),
+                    ),
+                    // Off
+                    RadioListTile<int>(
+                      value: -1,
+                      groupValue: selectedSub,
+                      onChanged: (v) async {
+                        _savedPrefAppliedOnce = true; // don't override later
+                        try {
+                          await _player.setSubtitleTrack(SubtitleTrack.no());
+                          if (!mounted) return;
+                          await _persistSubtitlePref('off');
+                          setState(() => _currentSubtitle = SubtitleTrack.no());
+                          setSheetState(() => selectedSub = -1);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Subtitles: Off')),
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                                content:
+                                    Text('Failed to disable subtitles: $e')),
+                          );
+                        }
+                      },
+                      title: const Text('Off',
+                          style: TextStyle(color: Colors.white)),
+                      activeColor: Colors.white,
+                    ),
+                    // Auto
+                    RadioListTile<int>(
+                      value: -2,
+                      groupValue: selectedSub,
+                      onChanged: (v) async {
+                        _savedPrefAppliedOnce = true; // don't override later
+                        try {
+                          await _player.setSubtitleTrack(SubtitleTrack.auto());
+                          if (!mounted) return;
+                          await _persistSubtitlePref('auto');
+                          setState(
+                              () => _currentSubtitle = SubtitleTrack.auto());
+                          setSheetState(() => selectedSub = -2);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Subtitles: Auto')),
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to set Auto: $e')),
+                          );
+                        }
+                      },
+                      title: const Text('Auto',
+                          style: TextStyle(color: Colors.white)),
+                      activeColor: Colors.white,
+                    ),
+
+                    if (_subtitleTracks.isEmpty)
+                      const Padding(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('No embedded tracks found',
+                              style: TextStyle(color: Colors.white54)),
+                        ),
+                      )
+                    else
+                      ...List.generate(_subtitleTracks.length, (i) {
+                        final t = _subtitleTracks[i];
+                        final label = _fullSubtitleLabel(t);
+                        return RadioListTile<int>(
+                          value: i,
+                          groupValue: selectedSub,
+                          onChanged: (v) async {
+                            if (v == null) return;
+                            _savedPrefAppliedOnce = true; // lock user choice
+                            final chosen = _subtitleTracks[v];
+                            try {
+                              await _player.setSubtitleTrack(chosen);
+                              if (!mounted) return;
+                              setState(() => _currentSubtitle = chosen);
+                              setSheetState(() => selectedSub = v);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content: Text(
+                                        'Subtitles: ${_fullSubtitleLabel(chosen)}')),
+                              );
+                            } catch (e) {
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content:
+                                        Text('Failed to set subtitles: $e')),
+                              );
+                            }
+                          },
+                          title: Text(label,
+                              style: const TextStyle(color: Colors.white)),
+                          activeColor: Colors.white,
+                        );
+                      }),
+                    const SizedBox(height: 8),
+                  ],
                 ),
-            ],
+              );
+            },
           ),
         );
       },
     );
-    if (!mounted || chosen == null) return;
-
-// prevent the one-time restore in _tracksSub from overriding the user's choice
-    _savedPrefAppliedOnce = true;
-
-// apply to player
-    await _player.setSubtitleTrack(chosen);
-
-// remember Off/Auto only (skip saving when a specific embedded track is chosen)
-    if (_isOff(chosen)) {
-      await _persistSubtitlePref('off');
-    } else if (_isAuto(chosen)) {
-      await _persistSubtitlePref('auto');
-    }
-
-// finally, reflect it in the UI
-    setState(() => _currentSubtitle = chosen);
   }
 
   // ---------- title toast overlay ----------
@@ -479,7 +959,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
               child: InkWell(
                 borderRadius: BorderRadius.circular(12),
-                onTap: _showSubtitlePicker,
+                onTap: _showTracksPicker,
                 child: Container(
                   constraints: const BoxConstraints(minWidth: 36),
                   padding:
