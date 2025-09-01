@@ -15,15 +15,14 @@ jobs:
         with:
           lfs: true  # 🚨 This is the key to pull .apk from Git LFS!
 
-      - name: 📦 Generate timestamped tag name
-        id: tag
-        run: echo "TAG_NAME=release-$(date +'%Y%m%d-%H%M%S')" >> "$GITHUB_ENV"
-
-      - name: 🚀 Create GitHub release with APK
+      - name: 🚀 Create or update GitHub release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ env.TAG_NAME }}
-          name: CacheBox Release - ${{ env.TAG_NAME }}
-          files: ./cachebox.apk  # Adjust if you use a different filename
+          tag_name: latest
+          name: Latest CacheBox Release
+          files: ./cachebox.apk
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
