@@ -1,4 +1,4 @@
-name: Upload APK
+name: Upload APK to Release
 
 on:
   push:
@@ -6,21 +6,16 @@ on:
       - main
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out the repository
+      - name: Check out code
         uses: actions/checkout@v3
 
-      - name: Set up JDK (if needed)
-        uses: actions/setup-java@v3
-        with:
-          java-version: '17' # Adjust the version if needed
-
-      - name: Upload APK to GitHub Releases
+      - name: Upload APK to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: ./cachebox.apk
+          files: ./cachebox.apk  # adjust if your APK is named differently
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
