@@ -1,4 +1,4 @@
-name: Upload APK to Release
+name: Upload APK to GitHub Release
 
 on:
   push:
@@ -6,16 +6,22 @@ on:
       - main
 
 jobs:
-  release:
+  upload-release:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out code
+      - name: 📥 Check out code
         uses: actions/checkout@v3
 
-      - name: Upload APK to GitHub Release
+      - name: 📦 Generate timestamped tag
+        id: tagger
+        run: echo "TAG_NAME=release-$(date +'%Y%m%d-%H%M%S')" >> "$GITHUB_ENV"
+
+      - name: 🚀 Create GitHub release
         uses: softprops/action-gh-release@v1
         with:
-          files: ./cachebox.apk  # adjust if your APK is named differently
+          tag_name: ${{ env.TAG_NAME }}
+          name: CacheBox Release - ${{ env.TAG_NAME }}
+          files: ./cachebox.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
