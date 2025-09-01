@@ -367,23 +367,21 @@ class _GroupHomeScreenState extends State<GroupHomeScreen> {
           actions: [
             if (_index == 1) ...[
               // <-- 1 is the Files tab index
-              //if (isOwner)
-              IconButton(
-                icon: const Icon(Icons.play_circle_fill),
-                tooltip: 'Play / Resume this folder',
-                onPressed: () async {
-                  final ok = await _filesKey.currentState
-                          ?.playResumeInCurrentFolder(context) ??
-                      false;
-                  if (!ok && mounted) {
+              if (isOwner)
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Build thumbnails for this folder',
+                  onPressed: () async {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('No playable media found here.')),
+                      const SnackBar(content: Text('Building thumbnails…')),
                     );
-                  }
-                },
-              ),
-
+                    await _filesKey.currentState
+                        ?.refreshCurrentFolderThumbnails();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Thumbnails updated')),
+                    );
+                  },
+                ),
               TextButton(
                 onPressed: () {
                   // This guarantees something happens when you tap Upload on the Files tab

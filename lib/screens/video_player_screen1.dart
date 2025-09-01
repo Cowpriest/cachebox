@@ -20,7 +20,6 @@ class VideoPlayerScreen extends StatefulWidget {
   final List<String>? playlistUrls; // parallel to playlistNames
   final List<String>? playlistNames; // optional labels
   final int? initialIndex; // index within playlistUrls for videoUrl
-  final bool initialReplayAll;
 
   const VideoPlayerScreen({
     super.key,
@@ -30,7 +29,6 @@ class VideoPlayerScreen extends StatefulWidget {
     this.playlistNames,
     this.initialIndex,
     this.resumeOnInitialOpen = true,
-    this.initialReplayAll = false,
   });
 
   @override
@@ -74,18 +72,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   bool _isOff(SubtitleTrack t) => t.id == SubtitleTrack.no().id;
   bool _isAuto(SubtitleTrack t) => t.id == SubtitleTrack.auto().id;
 
-  Future<void> _touchLastPlayed(String? resumeKey) async {
-    if (resumeKey == null) return;
-    try {
-      final sp = await SharedPreferences.getInstance();
-      // Store ms since epoch under a stable key
-      await sp.setInt(
-          'last:' + resumeKey, DateTime.now().millisecondsSinceEpoch);
-    } catch (_) {
-      // best effort only
-    }
-  }
-
   Future<void> _seekResumeWhenReady() async {
     // If duration is already known, resume immediately.
     if ((_player.state.duration ?? Duration.zero) > Duration.zero) {
@@ -126,7 +112,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     _resumeApplied = false;
     _resumeAllowedForThisItem = allowResume;
     _activeResumeKey = _keyForCurrent();
-    await _touchLastPlayed(_activeResumeKey);
     if (allowResume) {
       await _seekResumeWhenReady();
     } else {
@@ -226,7 +211,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     final dur = _player.state.duration?.inMilliseconds ?? 0;
     if (pos > 1000) {
       await ResumeStore.save(key: key, positionMs: pos, durationMs: dur);
-      await _touchLastPlayed(_activeResumeKey);
     }
   }
 
@@ -429,15 +413,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     _resumeAllowedForThisItem = widget.resumeOnInitialOpen;
 
     if (_hasUsablePlaylist) {
-      final needJump = _currentIndex != 0;
-      _ignoreNextIndexChangeOnce = needJump;
-
+      _ignoreNextIndexChangeOnce = true; // we’re about to jump
       _player.open(Playlist(_playlist), play: true);
-
-      if (needJump) {
-        _player.jump(_currentIndex); // we’ll ignore that one index change
-      }
-
+      _player.jump(_currentIndex); // triggers one index change we ignore
       _updateTitleFromState(showToast: true);
     } else {
       _activeResumeKey = _keyForUrl(widget.videoUrl);
@@ -454,10 +432,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     _saveTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       _persistPosition();
     });
-
-    if (widget.initialReplayAll) {
-      _applyLoopMode(_LoopMode.all);
-    }
   }
 
   @override
