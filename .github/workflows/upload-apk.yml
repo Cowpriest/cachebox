@@ -1,4 +1,4 @@
-name: Upload APK to GitHub Release
+name: Upload APK from LFS
 
 on:
   push:
@@ -6,24 +6,24 @@ on:
       - main
 
 jobs:
-  upload-release:
+  release-apk:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Check out code
+      - name: 📥 Checkout repo (with Git LFS)
         uses: actions/checkout@v3
         with:
-          lfs: true
+          lfs: true  # 🚨 This is the key to pull .apk from Git LFS!
 
-      - name: 📦 Generate timestamped tag
-        id: tagger
+      - name: 📦 Generate timestamped tag name
+        id: tag
         run: echo "TAG_NAME=release-$(date +'%Y%m%d-%H%M%S')" >> "$GITHUB_ENV"
 
-      - name: 🚀 Create GitHub release
+      - name: 🚀 Create GitHub release with APK
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ env.TAG_NAME }}
           name: CacheBox Release - ${{ env.TAG_NAME }}
-          files: ./cachebox.apk
+          files: ./cachebox.apk  # Adjust if you use a different filename
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
